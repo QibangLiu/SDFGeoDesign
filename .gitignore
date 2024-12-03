@@ -1,5 +1,5 @@
-*/slurm_output/
-*/saved_model/
-*/__pycache__/
-*/.ipynb_checkpoints/
-*/.vscode/
+**/slurm_output/
+**/saved_models/
+**/__pycache__/
+**/.ipynb_checkpoints/
+**/.vscode/

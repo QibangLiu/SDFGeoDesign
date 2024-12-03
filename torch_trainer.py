@@ -1,26 +1,22 @@
 # %%
-import numpy as np
-import matplotlib.pyplot as plt
-
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch_geometric.data import DataLoader as GeoDataLoader
 import timeit
 import os
 import json
+import numpy as np
 
 # %%
 
 
 class ModelCheckpoint:
     def __init__(
-        self, filepath, monitor="val_loss", verbose=0, save_best_only=False, mode="min"
+        self, filepaths=None, monitor="val_loss", verbose=0, save_best_only=False, mode="min"
     ):
-        if not isinstance(filepath,(list, tuple)):
-            filepath=[filepath]
+        # if not isinstance(filepath,(list, tuple)):
+        #     filepath=[filepath]
 
-        self.filepath = filepath
+        # self.filepaths = filepath
+        self.filepaths = filepaths
         self.monitor = monitor
         self.verbose = verbose
         self.save_best_only = save_best_only
@@ -38,7 +34,7 @@ class ModelCheckpoint:
             self.best = float("-inf")
 
     def __call__(self, epoch, logs=None, models=None):
-        if len(self.filepath) !=len(models):
+        if len(self.filepaths) != len(models):
             raise ValueError("Number of models is not equal to number of filepaths")
 
         logs = logs or {}
@@ -53,10 +49,10 @@ class ModelCheckpoint:
             if self.monitor_op(current, self.best):
                 if self.verbose > 0:
                     print(
-                        f"Epoch {epoch + 1}: {self.monitor} improved from {self.best} to {current}, saving model to {self.filepath}"
+                        f"Epoch {epoch + 1}: {self.monitor} improved from {self.best} to {current}, saving model to {self.filepaths}"
                     )
                 self.best = current
-                for model, filepath in zip(models, self.filepath):
+                for model, filepath in zip(models, self.filepaths):
                     self._save_model(model, filepath)
             else:
                 if self.verbose > 1:
@@ -65,8 +61,8 @@ class ModelCheckpoint:
                     )
         else:
             if self.verbose > 0:
-                print(f"Epoch {epoch + 1}: saving model to {self.filepath}")
-            for model, filepath in zip(models, self.filepath):
+                print(f"Epoch {epoch + 1}: saving model to {self.filepaths}")
+            for model, filepath in zip(models, self.filepaths):
                 self._save_model(model, filepath)
 
     def _save_model(self, model, filepath):
@@ -74,15 +70,25 @@ class ModelCheckpoint:
 
 
 class TorchTrainer():
-    def __init__(self, models, device):
-        if not isinstance(models, (list, tuple)):
+    def __init__(self, models, device, filebase='./saved_models'):
+        if isinstance(models, dict):
+            self.model_names = list(models.keys())
+            models = list(models.values())
+        elif isinstance(models, (list, tuple)):
+            self.model_names = [f"model{i}" for i in range(len(models))]
+            models = models
+        else:
+            self.model_names = [""]
             models = [models]
+
         for model in models:
             model.to(device)
         self.models = models
         self.logs = {}
         self.device = device
         self.epoch_start = 0
+        self.filebase = filebase
+        os.makedirs(filebase, exist_ok=True)
 
     def compile(
         self,
@@ -90,6 +96,7 @@ class TorchTrainer():
         lr=1e-3,
         loss=None,
         loss_names=None,
+        checkpoint=None,
         lr_scheduler=None,
         metrics=None,
         decay=None,
@@ -101,6 +108,11 @@ class TorchTrainer():
             combined_params += list(model.parameters())
         self.optimizer = optimizer(combined_params, lr=lr)
 
+        self.checkpoint = checkpoint
+        if checkpoint is not None and self.checkpoint.filepaths is None:
+            self.checkpoint.filepaths = [os.path.join(
+                self.filebase, m_name, 'model.ckpt') for m_name in self.model_names]
+
 
         # TODO: Add multiple loss function
         self.loss_fn = loss
@@ -110,7 +122,7 @@ class TorchTrainer():
         self.loss_weights = loss_weights
         self.external_trainable_variables = external_trainable_variables
         self.lr_scheduler = lr_scheduler
-        if self.lr_scheduler is not None:
+        if self.lr_scheduler is not None and "lr" not in self.logs:
             self.logs["lr"] = []
 
     def collect_logs(self, losses_vals={}, batch_size=1):
@@ -128,7 +140,7 @@ class TorchTrainer():
 
     def evaluate_losses(self, data):
         inputs_, y_true = data[0].to(self.device), data[1].to(self.device)
-        y_pred = self.model[0](inputs_)
+        y_pred = self.models[0](inputs_)
         # TODO: Add multiple loss function
         loss = self.loss_fn(y_pred, y_true)
         loss_dic = {"loss": loss.item()}
@@ -164,10 +176,6 @@ class TorchTrainer():
                 model.train()
             loss_vals = {}
             for data in train_loader:
-                # if isinstance(data, (tuple, list)):
-                #     data = [d.to(self.device) for d in data]
-                # else:
-                #     data = data.to(self.device)
                 loss = self.train_step(data)
                 for key, value in loss.items():
                     if key not in loss_vals:
@@ -184,10 +192,6 @@ class TorchTrainer():
                 loss_vals = {}
                 with torch.no_grad():
                     for data in val_loader:
-                        # if isinstance(data, (tuple, list)):
-                        #     data = [d.to(self.device) for d in data]
-                        # else:
-                        #     data = data.to(self.device)
                         loss = self.validate_step(data)
                         for key, value in loss.items():
                             if key not in loss_vals:
@@ -205,7 +209,9 @@ class TorchTrainer():
         self.epoch_start = epoch + 1
         return self.logs
 
-    def save_logs(self, filebase):
+    def save_logs(self, filebase=None):
+        if filebase is None:
+            filebase = self.filebase
         if self.logs is not None:
             if not os.path.exists(filebase):
                 os.makedirs(filebase, exist_ok=True)
@@ -213,26 +219,53 @@ class TorchTrainer():
             with open(his_file, "w") as f:
                 json.dump(self.logs, f)
 
-    def load_logs(self, filebase):
+    def load_logs(self, filebase=None):
+        if filebase is None:
+            filebase = self.filebase
         his_file = os.path.join(filebase, "logs.json")
         if os.path.exists(his_file):
             with open(his_file, "r") as f:
                 self.logs = json.load(f)
         return self.logs
 
-    def save_weights(self, filepath):
-        if not isinstance(filepath, (list, tuple)):
-            filepath = [filepath]
-        for model, path in zip(self.models, filepath):
+    def save_weights(self, filepaths=None):
+        if filepaths is None:
+            if self.checkpoint is None or self.checkpoint.filepaths is None:
+                raise ValueError("No filepaths provided")
+            else:
+                filepaths = self.checkpoint.filepaths
+        elif not isinstance(filepaths, (list, tuple)):
+            filepaths = [filepaths]
+        for model, path in zip(self.models, filepaths):
             torch.save(model.state_dict(), path)
 
-    def load_weights(self, filepath, device="cpu"):
-        if not isinstance(filepath, (list, tuple)):
-            filepath = [filepath]
-        for model, path in zip(self.models, filepath):
+    def load_weights(self, filepaths=None, device="cpu"):
+        if filepaths is None:
+            if self.checkpoint is None or self.checkpoint.filepaths is None:
+                raise ValueError("No filepaths provided")
+            else:
+                filepaths = self.checkpoint.filepaths
+        elif not isinstance(filepaths, (list, tuple)):
+            filepaths = [filepaths]
+
+        for model, path in zip(self.models, filepaths):
             state_dict = torch.load(path, map_location=device)
             model.load_state_dict(state_dict)
             model.eval()
 
+    def predict(self, data_loader):
+        y_pred = []
+        y_true = []
+        self.models[0].eval()
+        with torch.no_grad():
+            for data in data_loader:
+                inputs = data[0].to(self.device)
+                pred = self.models[0](inputs)
+                pred = pred.cpu().detach().numpy()
+                y_pred.append(pred)
+                y_true.append(data[1].cpu().detach().numpy())
+        y_true = np.vstack(y_true)
+        y_pred = np.vstack(y_pred)
+        return y_pred, y_true
 
 # %%

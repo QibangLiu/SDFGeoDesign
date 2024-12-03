@@ -47,8 +47,9 @@ def rerun_abaqus(working_dir):
     if os.path.exists("MyJob.inp"):
         os.system("/projects/bbkg/Abaqus/2024/Commands/abaqus job=MyJob input=MyJob.inp")
 
+
 # %%
-file_base="/work/hdd/bbpq/qibang/repository_Wbbpq/TRAINING_DATA/GeoSDF/abaqus/femDataR1"
+file_base = "/work/hdd/bbpq/qibang/repository_Wbbpq/TRAINING_DATA/GeoSDF2D/abaqus/femDataR1"
 sec_id_start, sec_id_end = int(sys.argv[1]), int(sys.argv[2])
 count=0
 rerun_fem=False
