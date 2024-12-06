@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=16    # <- match to OMP_NUM_THREADS
 #SBATCH --partition=gpuA100x4-interactive      # <- or one of: gpuA100x4 gpuA40x4 gpuA100x8 gpuMI100x8
 #SBATCH --time=01:00:00      # hh:mm:ss for the jo
-#SBATCH --mem=62g #<62.5?
+#SBATCH --mem=32g #<62.5?
 
 # # ### GPU options ###
 #SBATCH --gpus-per-node=1

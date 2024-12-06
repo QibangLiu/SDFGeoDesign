@@ -7,7 +7,7 @@ import pickle
 from skimage import measure
 # %%
 # fem data
-filebase_ss = "/work/hdd/bbpq/qibang/repository_Wbbpq/TRAINING_DATA/GeoSDF2D/abaqus/femDataR1"
+filebase_ss = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/abaqus/femDataR1"
 
 
 secs = [f.path for f in os.scandir(filebase_ss) if f.is_dir()]
@@ -34,7 +34,7 @@ strain = data[:, 0]
 valid_sample_ids = np.array(valid_sample_ids, dtype=int)
 # %%
 # geo data
-geos_file = '/work/hdd/bbpq/qibang/repository_Wbbpq/TRAINING_DATA/GeoSDF2D/geo/geo_sdf_randv_pcn_all.pkl'
+geos_file = '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/geo/geo_sdf_randv_pcn_all.pkl'
 with open(geos_file, "rb") as f:
     geo_data = pickle.load(f)
 vertices_all = geo_data['vertices']
@@ -55,65 +55,7 @@ data_valid = {
     'stress': stresses,
     'strain': strain,
     'x_grids': x_grids,
-    'y_grids': y_grids
+    'y_grids': y_grids,
+    'valid_sample_ids': valid_sample_ids
 }
-np.savez('/work/hdd/bbpq/qibang/repository_Wbbpq/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data.npz', **data_valid)
-
-# %%
-# save data as pickle
-# with open('/work/hdd/bbpq/qibang/repository_Wbbpq/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data.pkl', 'wb') as f:
-#   pickle.dump(data_valid, f)
-# %%
-# Load npz data
-loaded_data = np.load(
-    '/work/hdd/bbpq/qibang/repository_Wbbpq/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data.npz')
-
-# Access data
-loaded_sdf = loaded_data['sdf']
-loaded_stress = loaded_data['stress']
-loaded_strain = loaded_data['strain']
-loaded_x_grids = loaded_data['x_grids']
-loaded_y_grids = loaded_data['y_grids']
-
-print("Loaded SDF shape:", loaded_sdf.shape)
-print("Loaded stress shape:", loaded_stress.shape)
-print("Loaded strain shape:", loaded_strain.shape)
-print("Loaded x_grids shape:", loaded_x_grids.shape)
-print("Loaded y_grids shape:", loaded_y_grids.shape)
-# %%
-s_max = np.max(loaded_stress, axis=1)
-_ = plt.hist(s_max, bins=100)
-# %%
-id_m = np.where(s_max > 10)[0]
-clip_s = loaded_stress[id_m]
-sort_id = np.argsort(s_max[id_m])
-clip_sdf = loaded_sdf[id_m]
-
-fig = plt.figure(figsize=(20, 10))
-ax = fig.add_subplot(121)
-case = 500
-print("Max stress:", np.max(clip_s[sort_id][case]))
-ax.plot(clip_s[sort_id][case])
-ax = fig.add_subplot(122)
-SDF = clip_sdf[sort_id][case]
-measure.find_contours(SDF, 0, positive_orientation='high')
-contours = measure.find_contours(SDF, 0, positive_orientation='high')
-
-for contour in contours:
-    ax.plot(contour[:, 1], contour[:, 0], 'r', linewidth=2)
-
-
-# %%
-s_max = np.max(loaded_stress, axis=1)
-id_m = np.where((s_max > 1) & (s_max < 120))[0]
-
-data_valid = {
-    'sdf': loaded_sdf[id_m],
-    'stress': loaded_stress[id_m],
-    'strain': loaded_strain,
-    'x_grids': loaded_x_grids,
-    'y_grids': loaded_y_grids
-}
-np.savez('/work/hdd/bbpq/qibang/repository_Wbbpq/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_1-120.npz', **data_valid)
-
-# %%
+np.savez('/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data.npz', **data_valid)

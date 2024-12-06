@@ -94,19 +94,20 @@ class TorchTrainer():
         self,
         optimizer,
         lr=1e-3,
+        weight_decay=0,
         loss=None,
         loss_names=None,
         checkpoint=None,
         lr_scheduler=None,
         metrics=None,
-        decay=None,
         loss_weights=None,
         external_trainable_variables=None,
     ):
         combined_params = []
         for model in self.models:
             combined_params += list(model.parameters())
-        self.optimizer = optimizer(combined_params, lr=lr)
+        self.optimizer = optimizer(
+            combined_params, lr=lr, weight_decay=weight_decay)
 
         self.checkpoint = checkpoint
         if checkpoint is not None and self.checkpoint.filepaths is None:
@@ -118,12 +119,13 @@ class TorchTrainer():
         self.loss_fn = loss
         # TODO:
         self.metrics = metrics
-        self.decay = decay
         self.loss_weights = loss_weights
         self.external_trainable_variables = external_trainable_variables
-        self.lr_scheduler = lr_scheduler
-        if self.lr_scheduler is not None and "lr" not in self.logs:
-            self.logs["lr"] = []
+        if lr_scheduler is not None:
+            self.lr_scheduler = lr_scheduler[0](
+                self.optimizer, **lr_scheduler[1])
+            if "lr" not in self.logs:
+                self.logs["lr"] = []
 
     def collect_logs(self, losses_vals={}, batch_size=1):
         for key in losses_vals:
@@ -160,6 +162,18 @@ class TorchTrainer():
             val_loss["val_" + key] = value
         return val_loss
 
+    def learning_rate_decay(self, epoch):
+        if self.lr_scheduler is None:
+            return
+
+        if self.lr_scheduler.__class__.__name__ == "ReduceLROnPlateau":
+            if "val_loss" in self.logs:
+                self.lr_scheduler.step(self.logs["val_loss"][-1])
+        else:
+            self.lr_scheduler.step()
+
+        self.logs["lr"].append(self.lr_scheduler.get_last_lr()[0])
+
     def fit(
         self,
         train_loader,
@@ -182,9 +196,6 @@ class TorchTrainer():
                         loss_vals[key] = []
                     loss_vals[key].append(value)
             self.collect_logs(loss_vals, len(train_loader))
-            if self.lr_scheduler is not None:
-                self.lr_scheduler.step()
-                self.logs["lr"].append(self.lr_scheduler.get_last_lr()[0])
                 # validate
             if val_loader is not None:
                 for model in self.models:
@@ -201,6 +212,8 @@ class TorchTrainer():
             # callbacks at end of epoch
             if callbacks is not None:
                 callbacks(epoch, self.logs, self.models)
+            # learning rate decay
+            self.learning_rate_decay(epoch)
 
             te = timeit.default_timer()
             if (epoch + 1) % print_freq == 0:

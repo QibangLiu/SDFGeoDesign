@@ -17,15 +17,16 @@ import nn_modules
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-filebase = "./saved_models/fwd_model_relu_sig12-92_reducePlateau_0.9data"
-print("case: ", filebase)
+filebase = "./saved_models/fwd_model_relu_log_nominmax"
 # %%
 
 data = np.load(
-    '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92.npz')
+    '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_1-120.npz')
 sdf = data['sdf'].astype(np.float32)
 stress = data['stress'].astype(np.float32)
 strain = data['strain'].astype(np.float32)
+
+# %%
 
 sdf = sdf.reshape(-1, 120*120)
 # sdf_shift, sdf_scale = sdf.mean, sdf.std()
@@ -34,13 +35,21 @@ sdf_scaler = StandardScaler()
 sdf_norm = sdf_scaler.fit_transform(sdf)
 sdf_norm = sdf_norm.reshape(-1, 1, 120, 120)
 
-# stress_shift, stress_scale = stress.mean(), stress.std()
-# stress_norm = (stress-stress.mean())/stress.std()
+
 stress_scaler = MinMaxScaler()
-stress_norm = stress_scaler.fit_transform(stress)
+
+
+def y_trans(y):
+    y0 = y[:, 1:]
+    y0 = np.log(y0)
+    # y0_norm = stress_scaler.fit_transform(y0)
+    return y0
+
+
+stress_norm = y_trans(stress)
 
 sdf_train, sdf_test, stress_train, stress_test = train_test_split(
-    sdf_norm, stress_norm, test_size=0.1, random_state=42)
+    sdf_norm, stress_norm, test_size=0.2, random_state=42)
 
 
 sdf_train = torch.tensor(sdf_train)
@@ -57,12 +66,15 @@ test_loader = DataLoader(
 
 
 def y_inv_trans(y):
-    return stress_scaler.inverse_transform(y)
+    # y0 = stress_scaler.inverse_transform(y)
+    y0 = np.exp(y)
+    y = np.hstack([np.zeros((y0.shape[0], 1)), y0])
+    return y
 # %%
 
 
 class ForwardModel(nn.Module):
-    def __init__(self, img_shape, channel_list, has_attention, num_out=51, first_conv_channels=16, num_res_blocks=1, norm_groups=8):
+    def __init__(self, img_shape, channel_list, has_attention, num_out=50, first_conv_channels=16, num_res_blocks=1, norm_groups=8):
         super().__init__()
         self.unet = nn_modules.UNet(img_shape, channel_list,
                                     has_attention, first_conv_channels=first_conv_channels, num_res_blocks=num_res_blocks, norm_groups=norm_groups)
@@ -77,8 +89,7 @@ class ForwardModel(nn.Module):
             self.mlp.append(nn.SiLU())
             in_sz = sz[i]
         self.mlp.append(nn.Linear(in_sz, num_out))
-        self.mlp.append(nn.ReLU())
-
+        # self.mlp.append(nn.ReLU())
 
     def forward(self, x):
         x = self.unet(x)
@@ -106,15 +117,13 @@ checkpoint = torch_trainer.ModelCheckpoint(
     monitor="val_loss", save_best_only=True
 )
 trainer = torch_trainer.TorchTrainer(fwd_model, device, filebase)
-lr_scheduler = (torch.optim.lr_scheduler.ReduceLROnPlateau, {
-                'factor': 0.7, 'patience': 40})
-trainer.compile(optimizer=torch.optim.Adam, lr=5e-4, lr_scheduler=lr_scheduler,
+trainer.compile(optimizer=torch.optim.Adam, lr=5e-4,
                 loss=nn.MSELoss(), checkpoint=checkpoint)
-# %%
+
 # trainer.load_weights(device=device)
 # h = trainer.load_logs()
 h = trainer.fit(train_loader, val_loader=test_loader,
-                epochs=500, callbacks=checkpoint, print_freq=1)
+                epochs=1000, callbacks=checkpoint, print_freq=1)
 trainer.save_logs(filebase)
 
 # %%

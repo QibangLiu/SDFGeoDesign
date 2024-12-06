@@ -16,4 +16,4 @@ module load anaconda3_gpu/23.3.1
 export LD_LIBRARY_PATH=/sw/external/python/anaconda3-2023.03_cuda/lib:$LD_LIBRARY_PATH
 which python
 
-srun python3  fwd.py
+srun python3 -u fwd.py
