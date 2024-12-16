@@ -12,12 +12,14 @@ class AttentionBlock(nn.Module):
         groups: Number of groups to be used for GroupNormalization layer
     """
 
-    def __init__(self, units, groups=8):
+    def __init__(self, units, groups=None):
         super(AttentionBlock, self).__init__()
-        self.units = units
+        self.units = units  # number of channels
         self.groups = groups
-
-        self.norm = nn.GroupNorm(groups, units)
+        if groups is None:
+            self.norm = nn.BatchNorm2d(units)
+        else:
+            self.norm = nn.GroupNorm(groups, units)
         self.query = nn.Linear(units, units)
         self.key = nn.Linear(units, units)
         self.value = nn.Linear(units, units)
@@ -61,20 +63,30 @@ class ResidualBlock(nn.Module):
         activation_fn: Activation function to be used
     """
 
-    def __init__(self, channel_in, channel_out, groups=8, activation_fn=F.silu):
+    def __init__(self, channel_in, channel_out, groups=8, activation_fn=nn.SiLU(), dropout=None):
         super(ResidualBlock, self).__init__()
 
         self.groups = groups
         self.activation_fn = activation_fn
         self.net = nn.ModuleList()
-        self.net.append(nn.GroupNorm(groups, channel_in))
+        if groups is None:
+            self.net.append(nn.BatchNorm2d(channel_in))
+        else:
+            self.net.append(nn.GroupNorm(groups, channel_in))
+        self.net.append(activation_fn)
+        if dropout is not None:
+            self.net.append(nn.Dropout2d(p=dropout))
         self.net.append(nn.Conv2d(channel_in, channel_out,
                                   kernel_size=3, padding="same"))
-        # self.net.append(nn.Dropout2d(p=0.2))
-        self.net.append(nn.GroupNorm(groups, channel_out))
+        if groups is None:
+            self.net.append(nn.BatchNorm2d(channel_out))
+        else:
+            self.net.append(nn.GroupNorm(groups, channel_out))
+        self.net.append(activation_fn)
+        if dropout is not None:
+            self.net.append(nn.Dropout2d(p=dropout))
         self.net.append(nn.Conv2d(channel_out, channel_out,
                                   kernel_size=3, padding="same"))
-        # self.net.append(nn.Dropout2d(p=0.2))
         if channel_in != channel_out:
             self.shortcut = nn.Conv2d(channel_in, channel_out, kernel_size=1)
         else:
@@ -119,8 +131,8 @@ class UpSample(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, img_shape, channel_list, has_attention, num_res_blocks=1, norm_groups=8,
-                 interpolation="nearest", activation_fn=F.silu, first_conv_channels=64):
+    def __init__(self, img_shape, channel_list, has_attention, num_res_blocks=1, norm_groups=None,
+                 interpolation="nearest", activation_fn=nn.SiLU(), first_conv_channels=64, dropout=None):
         super().__init__()
         channel_in, img_size = img_shape[0], img_shape[1]
         self.activation_fn = activation_fn
@@ -136,7 +148,7 @@ class UNet(nn.Module):
             else:
                 in_channel = channel_list[i-1]
             self.encoder.append(ResidualBlock(
-                in_channel, channel_list[i], groups=norm_groups, activation_fn=activation_fn))
+                in_channel, channel_list[i], groups=norm_groups, activation_fn=activation_fn, dropout=dropout))
             if has_attention[i]:
                 self.encoder.append(AttentionBlock(
                     channel_list[i], groups=norm_groups))
@@ -144,7 +156,7 @@ class UNet(nn.Module):
             encoder_skip_idx.append(len(self.encoder)-1)
             for _ in range(1, num_res_blocks):
                 self.encoder.append(ResidualBlock(
-                    channel_list[i], channel_list[i], groups=norm_groups, activation_fn=activation_fn))
+                    channel_list[i], channel_list[i], groups=norm_groups, activation_fn=activation_fn, dropout=dropout))
                 if has_attention[i]:
                     self.encoder.append(AttentionBlock(
                         channel_list[i], groups=norm_groups))
@@ -159,11 +171,11 @@ class UNet(nn.Module):
 
         self.bottleneck = nn.ModuleList()
         self.bottleneck.append(ResidualBlock(
-            channel_list[-1], channel_list[-1], groups=norm_groups, activation_fn=activation_fn))
+            channel_list[-1], channel_list[-1], groups=norm_groups, activation_fn=activation_fn, dropout=dropout))
         self.bottleneck.append(AttentionBlock(
             channel_list[-1], groups=norm_groups))
         self.bottleneck.append(ResidualBlock(
-            channel_list[-1], channel_list[-1], groups=norm_groups, activation_fn=activation_fn))
+            channel_list[-1], channel_list[-1], groups=norm_groups, activation_fn=activation_fn, dropout=dropout))
 
         self.decoder = nn.ModuleList()
         decoder_skip_idx = []
@@ -173,7 +185,7 @@ class UNet(nn.Module):
             else:
                 in_channel = channel_list[i+1]+self.skip_channels.pop()
             self.decoder.append(ResidualBlock(
-                in_channel, channel_list[i], groups=norm_groups, activation_fn=activation_fn))
+                in_channel, channel_list[i], groups=norm_groups, activation_fn=activation_fn, dropout=dropout))
             decoder_skip_idx.append(len(self.decoder)-1)
             if has_attention[i]:
                 self.decoder.append(AttentionBlock(
@@ -181,7 +193,7 @@ class UNet(nn.Module):
             for _ in range(1, num_res_blocks):
                 in_channel = channel_list[i]+self.skip_channels.pop()
                 self.decoder.append(ResidualBlock(
-                    in_channel, channel_list[i], groups=norm_groups, activation_fn=activation_fn))
+                    in_channel, channel_list[i], groups=norm_groups, activation_fn=activation_fn, dropout=dropout))
                 decoder_skip_idx.append(len(self.decoder)-1)
                 if has_attention[i]:
                     self.decoder.append(AttentionBlock(

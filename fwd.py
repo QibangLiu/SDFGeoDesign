@@ -15,14 +15,17 @@ import torch_trainer
 from skimage import measure
 import nn_modules
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from shapely.geometry import Polygon
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-filebase = "./saved_models/fwd_model_relu_sig12-92_reducePlateau_0.9data"
+filebase = "./saved_models/fwd_sig12-92_aug_shift3_0-28781"
 print("case: ", filebase)
+train_flag = "train"  # "evaluate" "continue" "train"
 # %%
-
-data = np.load(
-    '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92.npz')
+data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92_shift4_0-10000_aug.npz"
+data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92.npz"
+data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92_shift3_0-28781_aug.npz"
+data = np.load(data_file)
 sdf = data['sdf'].astype(np.float32)
 stress = data['stress'].astype(np.float32)
 strain = data['strain'].astype(np.float32)
@@ -40,7 +43,7 @@ stress_scaler = MinMaxScaler()
 stress_norm = stress_scaler.fit_transform(stress)
 
 sdf_train, sdf_test, stress_train, stress_test = train_test_split(
-    sdf_norm, stress_norm, test_size=0.1, random_state=42)
+    sdf_norm, stress_norm, test_size=0.2, random_state=42)
 
 
 sdf_train = torch.tensor(sdf_train)
@@ -58,6 +61,11 @@ test_loader = DataLoader(
 
 def y_inv_trans(y):
     return stress_scaler.inverse_transform(y)
+
+
+def x_inv_trans(x):
+    x = x.reshape(-1, 120*120)
+    return sdf_scaler.inverse_transform(x).reshape(-1, 120, 120)
 # %%
 
 
@@ -95,7 +103,7 @@ channel_list = [8, 16, 32, 64]
 has_attention = [False, False, True, True]
 num_out = stress_train.shape[1]
 fwd_model = ForwardModel(img_shape, channel_list,
-                         has_attention, num_out=num_out, first_conv_channels=8, num_res_blocks=1, norm_groups=8)
+                         has_attention, num_out=num_out, first_conv_channels=8, num_res_blocks=1, norm_groups=None)
 trainable_params = sum(p.numel()
                        for p in fwd_model.parameters() if p.requires_grad)
 print(f"Total number of trainable parameters: {trainable_params}")
@@ -111,74 +119,86 @@ lr_scheduler = (torch.optim.lr_scheduler.ReduceLROnPlateau, {
 trainer.compile(optimizer=torch.optim.Adam, lr=5e-4, lr_scheduler=lr_scheduler,
                 loss=nn.MSELoss(), checkpoint=checkpoint)
 # %%
-# trainer.load_weights(device=device)
-# h = trainer.load_logs()
-h = trainer.fit(train_loader, val_loader=test_loader,
-                epochs=500, callbacks=checkpoint, print_freq=1)
-trainer.save_logs(filebase)
+if train_flag == "evaluate" or train_flag == "continue":
+    trainer.load_weights(device=device)
+    h = trainer.load_logs()
+if train_flag == "train" or train_flag == "continue":
+    h = trainer.fit(train_loader, val_loader=test_loader,
+                    epochs=300, callbacks=checkpoint, print_freq=1)
+    trainer.save_logs(filebase)
 
 # %%
 trainer.load_weights(device=device)
 h = trainer.load_logs()
-fig = plt.figure()
-ax = plt.subplot(1, 1, 1)
-ax.plot(h["loss"], label="loss")
-ax.plot(h["val_loss"], label="val_loss")
-ax.legend()
-ax.set_yscale("log")
+if h is not None:
+    fig = plt.figure()
+    ax = plt.subplot(1, 1, 1)
+    ax.plot(h["loss"], label="loss")
+    ax.plot(h["val_loss"], label="val_loss")
+    ax.legend()
+    ax.set_yscale("log")
 # %%
-
-
-# def predict(self, data_loader):
-#     y_pred = []
-#     y_true = []
-#     with torch.no_grad():
-#         for data in data_loader:
-#             inputs = data[0].to(device)
-#             pred = fwd_model(inputs)
-#             pred = pred.cpu().detach().numpy()
-#             y_pred.append(pred)
-#             y_true.append(data[1].cpu().detach().numpy())
-#     y_true = np.vstack(y_true)
-#     y_pred = np.vstack(y_pred)
-#     return y_pred, y_true
-
 
 s_pred, s_true = trainer.predict(test_loader)
 s_pred = y_inv_trans(s_pred)
 s_true = y_inv_trans(s_true)
 error_s = np.linalg.norm(s_pred-s_true, axis=1) / \
     np.linalg.norm(s_true, axis=1)
+
 fig = plt.figure(figsize=(4.8, 3.6))
 ax = plt.subplot(1, 1, 1)
 _ = ax.hist(error_s, bins=20)
-
+ax.set_xlabel("L2 relative error")
+ax.set_ylabel("Frequency")
 # %%
 sort_idx = np.argsort(error_s)
-min_index = sort_idx[0]
-max_index = sort_idx[int(len(sort_idx)*0.97)]
-median_index = sort_idx[int(len(sort_idx)*0.5)]
-# # Print the indexes
-print("Index for minimum geo:", min_index,
-      "with error", error_s[min_index])
-print("Index for maximum geo:", max_index,
-      "with error", error_s[max_index])
-print("Index for median geo:", median_index,
-      "with error", error_s[median_index])
-min_median_max_index = np.array([min_index, median_index, max_index])
-nr, nc = 1, 3
+idx_best = sort_idx[0]
+idx_32perc = sort_idx[int(len(sort_idx)*0.32)]
+idx_64perc = sort_idx[int(len(sort_idx)*0.64)]
+idx_95perc = sort_idx[int(len(sort_idx)*0.95)]
+
+index_list = [idx_best, idx_32perc, idx_64perc, idx_95perc]
+labels = ["Best", "32th percentile", "64th percentile", "95th percentile"]
+for label, idx in zip(labels, index_list):
+    print(f"{label} L2 error: {error_s[idx]}")
+nr, nc = 1, len(index_list)
 fig = plt.figure(figsize=(nc*4.8, nr*3.6))
-for i, index in enumerate(min_median_max_index):
+for i, index in enumerate(index_list):
 
     ax = plt.subplot(nr, nc, i+1)
     s_pred_i = s_pred[index]
     s_true_i = s_true[index]
-    ax.plot(strain, s_true_i, label="true")
-    ax.plot(strain, s_pred_i, label="pred")
+    ax.plot(strain*100, s_true_i, 'r', label="True")
+    ax.plot(strain*100, s_pred_i, '--b', label="Pred.")
     ax.legend()
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
+    ax.set_xlabel(r"$\varepsilon~[\%]$")
+    ax.set_ylabel(r"$\sigma~[MPa]$")
+    ax.set_title(f"{labels[i]}")
 
     plt.tight_layout()
+
+# %%
+sdf_test_inv = x_inv_trans(sdf_test.numpy())
+
+nr, nc = 1, len(index_list)
+fig = plt.figure(figsize=(nc*4.8, nr*3.6))
+for i, idx in enumerate(index_list):
+    contours = measure.find_contours(
+        sdf_test_inv[idx], 0, positive_orientation='high')
+    ax = plt.subplot(nr, nc, i+1)
+    l_style = ['r-', 'b--']
+    holes = []
+    for j, contour in enumerate(contours):
+        contour = (contour-10)/100
+        x, y = contour[:, 1], contour[:, 0]
+        if j == 0:
+            ax.fill(x, y, alpha=1.0, edgecolor="black",
+                    facecolor="cyan", label="Outer Boundary")
+        else:
+            ax.fill(x, y, alpha=1.0, edgecolor="black",
+                    facecolor="white", label="Hole")
+        ax.grid(True)
+        ax.axis("equal")  # Keep aspect ratio square
+
 
 # %%
