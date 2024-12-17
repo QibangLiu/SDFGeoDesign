@@ -18,13 +18,13 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from shapely.geometry import Polygon
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-filebase = "./saved_models/fwd_sig12-92_aug_shift3_0-28781"
+filebase = "./saved_models/fwd_sig12-92_aug10000"
 print("case: ", filebase)
 train_flag = "train"  # "evaluate" "continue" "train"
 # %%
 data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92_shift4_0-10000_aug.npz"
-data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92.npz"
-data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92_shift3_0-28781_aug.npz"
+# data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92.npz"
+# data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92_shift3_0-28781_aug.npz"
 data = np.load(data_file)
 sdf = data['sdf'].astype(np.float32)
 stress = data['stress'].astype(np.float32)
@@ -33,7 +33,7 @@ strain = data['strain'].astype(np.float32)
 sdf = sdf.reshape(-1, 120*120)
 # sdf_shift, sdf_scale = sdf.mean, sdf.std()
 # sdf_norm = (sdf-sdf.mean())/sdf.std()
-sdf_scaler = StandardScaler()
+sdf_scaler = MinMaxScaler((-1, 1))
 sdf_norm = sdf_scaler.fit_transform(sdf)
 sdf_norm = sdf_norm.reshape(-1, 1, 120, 120)
 
@@ -70,12 +70,29 @@ def x_inv_trans(x):
 
 
 class ForwardModel(nn.Module):
-    def __init__(self, img_shape, channel_list, has_attention, num_out=51, first_conv_channels=16, num_res_blocks=1, norm_groups=8):
+
+    def __init__(
+        self,
+        img_shape,
+        first_conv_channels,
+        channel_mutipliers,
+        has_attention,
+        num_out=51,
+        num_res_blocks=1,
+        norm_groups=8,
+    ):
         super().__init__()
-        self.unet = nn_modules.UNet(img_shape, channel_list,
-                                    has_attention, first_conv_channels=first_conv_channels, num_res_blocks=num_res_blocks, norm_groups=norm_groups)
-        self.cov = nn.Conv2d(
-            channel_list[0], 1, kernel_size=3, stride=2, padding=1)
+        self.unet = nn_modules.UNet(
+            img_shape,
+            first_conv_channels,
+            channel_mutipliers,
+            has_attention,
+            num_res_blocks=num_res_blocks,
+            norm_groups=norm_groups,
+        )
+        in_channels = channel_mutipliers[0] * first_conv_channels
+
+        self.cov = nn.Conv2d(in_channels, 1, kernel_size=3, stride=2, padding=1)
         sz = [50, 50, 50, 50]
         self.mlp = nn.ModuleList()
         in_sz = img_shape[1]*img_shape[2]//4
@@ -86,7 +103,6 @@ class ForwardModel(nn.Module):
             in_sz = sz[i]
         self.mlp.append(nn.Linear(in_sz, num_out))
         self.mlp.append(nn.ReLU())
-
 
     def forward(self, x):
         x = self.unet(x)
@@ -99,11 +115,20 @@ class ForwardModel(nn.Module):
 
 # %%
 img_shape = tuple(sdf_train.shape[1:])
-channel_list = [8, 16, 32, 64]
+channel_mutipliers = [1, 2, 4, 8]
 has_attention = [False, False, True, True]
 num_out = stress_train.shape[1]
-fwd_model = ForwardModel(img_shape, channel_list,
-                         has_attention, num_out=num_out, first_conv_channels=8, num_res_blocks=1, norm_groups=None)
+first_conv_channels = 8
+
+fwd_model = ForwardModel(
+    img_shape,
+    first_conv_channels,
+    channel_mutipliers,
+    has_attention,
+    num_out=num_out,
+    num_res_blocks=1,
+    norm_groups=None,
+)
 trainable_params = sum(p.numel()
                        for p in fwd_model.parameters() if p.requires_grad)
 print(f"Total number of trainable parameters: {trainable_params}")
@@ -114,8 +139,11 @@ checkpoint = torch_trainer.ModelCheckpoint(
     monitor="val_loss", save_best_only=True
 )
 trainer = torch_trainer.TorchTrainer(fwd_model, device, filebase)
-lr_scheduler = (torch.optim.lr_scheduler.ReduceLROnPlateau, {
-                'factor': 0.7, 'patience': 40})
+lr_scheduler = {
+    "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau,
+    "params": {"factor": 0.7, "patience": 40},
+    "metric_name": "val_loss",
+}
 trainer.compile(optimizer=torch.optim.Adam, lr=5e-4, lr_scheduler=lr_scheduler,
                 loss=nn.MSELoss(), checkpoint=checkpoint)
 # %%
@@ -197,7 +225,8 @@ for i, idx in enumerate(index_list):
         else:
             ax.fill(x, y, alpha=1.0, edgecolor="black",
                     facecolor="white", label="Hole")
-        ax.grid(True)
+        # ax.grid(True)
+        ax.axis("off")
         ax.axis("equal")  # Keep aspect ratio square
 
 

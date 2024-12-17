@@ -122,10 +122,14 @@ class TorchTrainer():
         self.loss_weights = loss_weights
         self.external_trainable_variables = external_trainable_variables
         if lr_scheduler is not None:
-            self.lr_scheduler = lr_scheduler[0](
-                self.optimizer, **lr_scheduler[1])
+            self.lr_scheduler = lr_scheduler["scheduler"](
+                self.optimizer, **lr_scheduler["params"])
             if "lr" not in self.logs:
                 self.logs["lr"] = []
+            if "metric_name" in lr_scheduler:
+                self.metric_name = lr_scheduler["metric_name"]
+            else:
+                self.metric_name = "val_loss"
 
     def collect_logs(self, losses_vals={}, batch_size=1):
         for key in losses_vals:
@@ -167,8 +171,8 @@ class TorchTrainer():
             return
 
         if self.lr_scheduler.__class__.__name__ == "ReduceLROnPlateau":
-            if "val_loss" in self.logs:
-                self.lr_scheduler.step(self.logs["val_loss"][-1])
+            if self.metric_name in self.logs:
+                self.lr_scheduler.step(self.logs[self.metric_name][-1])
         else:
             self.lr_scheduler.step()
 
