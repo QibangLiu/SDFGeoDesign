@@ -141,7 +141,6 @@ class UpSample(nn.Module):
 
 
 class UNet(nn.Module):
-
     def __init__(
         self,
         img_shape,
@@ -475,7 +474,13 @@ class UNetTimeStep(nn.Module):
             self.label_emb = nn.Embedding(label_dim, label_emb_dim)
         else:
             self.label_emb = nn.Sequential(
-                nn.Linear(label_dim, label_emb_dim), activation_fn
+                nn.Linear(label_dim, 2*label_emb_dim),
+                activation_fn,
+                nn.Linear(2*label_emb_dim, 2*label_emb_dim),
+                activation_fn,
+                nn.Linear(2*label_emb_dim, 2*label_emb_dim),
+                activation_fn,
+                nn.Linear(2*label_emb_dim, label_emb_dim),
             )
 
         self.first_conv = nn.Conv2d(
@@ -1001,11 +1006,13 @@ class GaussianDiffusion:
             # 2. predict noise using model
 
             pred_noise_none = model(
-                sample_img, t, labels, torch.zeros(batch_size).int().cuda()
+                sample_img, t, labels, torch.zeros(
+                    batch_size, dtype=torch.int32).to(device)
             )
             if conditioning:
                 pred_noise_c = model(
-                    sample_img, t, labels, torch.ones(batch_size).int().cuda()
+                    sample_img, t, labels, torch.ones(
+                        batch_size, dtype=torch.int32).to(device)
                 )
                 pred_noise = (1 + w) * pred_noise_c - w * pred_noise_none
             else:

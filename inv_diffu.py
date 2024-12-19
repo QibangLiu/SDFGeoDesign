@@ -16,7 +16,7 @@ from torch.utils.data import Dataset, TensorDataset, DataLoader
 import nn_modules
 
 # %%
-train_flag = "train"
+train_flag = "evaluate"
 filebase = "./saved_models/inv_sig12-92_aug10000"
 data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92_shift4_0-10000_aug.npz"
 fwd_model_path = "/work/hdd/bdsy/qibang/repository_Wbdsy/GeoSDF2D/saved_models/fwd_sig12-92_aug10000/model.ckpt"
@@ -36,7 +36,7 @@ stress_scaler = MinMaxScaler((-1, 1))
 stress_norm = stress_scaler.fit_transform(stress)
 
 sdf_train, sdf_test, stress_train, stress_test = train_test_split(
-    sdf_norm, stress_norm, test_size=0.2, random_state=42
+    sdf_norm, stress_norm, test_size=0.2, random_state=52
 )
 
 
@@ -48,7 +48,7 @@ stress_test = torch.tensor(stress_test)
 train_dataset = TensorDataset(sdf_train, stress_train)
 test_dataset = TensorDataset(sdf_test, stress_test)
 
-train_loader = DataLoader(train_dataset, batch_size=256, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False)
 
 
@@ -135,8 +135,8 @@ channel_multpliers = [1, 2, 4, 8]
 has_attention = [False, False, False, False]
 num_heads = 4
 num_res_blocks = 1
-norm_groups = None
-fist_conv_channels = 16
+norm_groups = 16
+fist_conv_channels = 32
 label_dim = stress_train.shape[1]
 
 inv_model = nn_modules.UNetTimeStep(
@@ -218,7 +218,7 @@ if h is not None:
 
 # %%
 # design
-id = 0
+id = 23
 num_sol = 10
 Xtarg = test_dataset[id][0].unsqueeze(0).to(device)
 Ytarg = test_dataset[id][1].unsqueeze(0).to(device)
@@ -234,16 +234,17 @@ with torch.no_grad():
 Ypred_inv = y_inv_trans(Ypred.cpu().detach().numpy())
 Ytarg_inv = y_inv_trans(labels.cpu().detach().numpy())
 Xpred_inv = x_inv_trans(Xpred.cpu().detach().numpy())
-L2error = np.linalg.norm(Ypred_inv - Ytarg_inv) / np.linalg.norm(Ytarg_inv)
+L2error = np.linalg.norm(Ypred_inv - Ytarg_inv, axis=1) / \
+    np.linalg.norm(Ytarg_inv, axis=1)
 sorted_idx = np.argsort(L2error)
-
 # %%
-evl_ids = [
+evl_ids = np.array([
     sorted_idx[0],
     sorted_idx[int(len(sorted_idx) * 0.33)],
     sorted_idx[int(len(sorted_idx) * 0.66)],
     sorted_idx[-1],
-]
+], dtype=int)
+print(L2error[evl_ids])
 legends = ["best", "33\%", "66\%", "worst"]
 fig = plt.figure(figsize=(4.8 * 5, 3.6))
 ax = plt.subplot(1, 5, 1)

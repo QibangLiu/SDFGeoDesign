@@ -20,7 +20,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 filebase = "./saved_models/fwd_sig12-92_aug10000"
 print("case: ", filebase)
-train_flag = "train"  # "evaluate" "continue" "train"
+train_flag = "evaluate"  # "evaluate" "continue" "train"
 # %%
 data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92_shift4_0-10000_aug.npz"
 # data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92.npz"
@@ -56,7 +56,7 @@ test_dataset = TensorDataset(sdf_test, stress_test)
 
 train_loader = DataLoader(train_dataset, batch_size=256, shuffle=True)
 test_loader = DataLoader(
-    test_dataset, batch_size=1024, shuffle=False)
+    test_dataset, batch_size=512, shuffle=False)
 
 
 def y_inv_trans(y):
@@ -182,11 +182,11 @@ ax.set_ylabel("Frequency")
 sort_idx = np.argsort(error_s)
 idx_best = sort_idx[0]
 idx_32perc = sort_idx[int(len(sort_idx)*0.32)]
-idx_64perc = sort_idx[int(len(sort_idx)*0.64)]
+idx_63perc = sort_idx[int(len(sort_idx)*0.63)]
 idx_95perc = sort_idx[int(len(sort_idx)*0.95)]
 
-index_list = [idx_best, idx_32perc, idx_64perc, idx_95perc]
-labels = ["Best", "32th percentile", "64th percentile", "95th percentile"]
+index_list = [idx_best, idx_32perc, idx_63perc, idx_95perc]
+labels = ["Best", "32th percentile", "63th percentile", "95th percentile"]
 for label, idx in zip(labels, index_list):
     print(f"{label} L2 error: {error_s[idx]}")
 nr, nc = 1, len(index_list)
