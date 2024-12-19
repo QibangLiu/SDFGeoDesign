@@ -88,7 +88,8 @@ class TorchTrainer():
         self.device = device
         self.epoch_start = 0
         self.filebase = filebase
-        os.makedirs(filebase, exist_ok=True)
+        for m_name in self.model_names:
+            os.makedirs(os.path.join(filebase, m_name), exist_ok=True)
 
     def compile(
         self,

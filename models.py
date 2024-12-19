@@ -100,6 +100,7 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42):
     sdf = sdf.reshape(-1, 120 * 120)
 
     # sdf_scaler = MinMaxScaler((-1, 1))
+    # sdf_scaler = StandardScaler()
     # sdf_norm = sdf_scaler.fit_transform(sdf)
     sdf_shift, sdf_scale = np.mean(sdf), np.std(sdf)
     sdf_norm = (sdf - sdf_shift) / sdf_scale
@@ -128,7 +129,7 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42):
     def x_inv_trans(x):
         # x = x.reshape(-1, 120 * 120)
         # return sdf_scaler.inverse_transform(x).reshape(-1, 120, 120)
-        return x * sdf_scale + sdf_shift
+        return (x * sdf_scale + sdf_shift)
 
     sdf_inv_scaler = x_inv_trans
     stress_inv_scaler = y_inv_trans
@@ -171,6 +172,7 @@ def TrainForwardModel(fwd_model, filebase, train_flag, train_loader, test_loader
                     epochs=epochs, callbacks=checkpoint, print_freq=1)
 
     trainer.load_weights(device=device)
+    trainer.save_logs()
 
     return trainer
 
@@ -223,7 +225,7 @@ def EvaluateForwardModel(trainer, test_loader, sdf_inv_scaler, stress_inv_scal, 
 
 
 # %%
-"""Inverse model """
+"""Diffusion Inverse model """
 diffu_inv_filebase = "/work/hdd/bdsy/qibang/repository_Wbdsy/GeoSDF2D/saved_models/inv_sig12-92_aug10000"
 diffu_model_path = f"{diffu_inv_filebase}/model.ckpt"
 
@@ -384,11 +386,243 @@ def EvaluateDiffusionInverseModel(fwd_model, inv_Unet, gaussian_diffusion, Ytarg
 
 
 # %%
+"""UcVAE inverse model"""
+ucvae_inv_filebase = "/work/hdd/bdsy/qibang/repository_Wbdsy/GeoSDF2D/saved_models/ucvae_sig12-92_aug10000"
+ucvae_decoder_path = f"{ucvae_inv_filebase}/decoder/model.ckpt"
+latent_dim = 10
+
+
+class Encoder(nn.Module):
+    def __init__(self, latent_dim, img_shape,
+                 first_conv_channels,
+                 channel_mutipliers,
+                 has_attention,
+                 num_res_blocks,
+                 norm_groups,):
+        super().__init__()
+
+        self.unet = nn_modules.UNet(
+            img_shape,
+            first_conv_channels,
+            channel_mutipliers,
+            has_attention,
+            num_res_blocks=num_res_blocks,
+            norm_groups=norm_groups,
+        )
+        in_channels = channel_mutipliers[0] * first_conv_channels
+        self.cov = nn.Conv2d(
+            in_channels, 1, kernel_size=3, stride=2, padding=1)
+        sz = [50, 50, 50, 50]
+        self.mlp = nn.ModuleList()
+        in_sz = img_shape[1]*img_shape[2]//4
+        for i in range(len(sz)):
+            self.mlp.append(nn.Linear(in_sz, sz[i]))
+            self.mlp.append(nn.BatchNorm1d(sz[i]))
+            self.mlp.append(nn.SiLU())
+            in_sz = sz[i]
+        self.mean_layer = nn.Linear(in_sz, latent_dim)
+        self.logvar_layer = nn.Linear(in_sz, latent_dim)
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def forward(self, x):
+        x = self.unet(x)
+        x = self.cov(x)
+        x = x.view(x.size(0), -1)
+        for layer in self.mlp:
+            x = layer(x)
+        mu = self.mean_layer(x)
+        logvar = self.logvar_layer(x)
+        z = self.reparameterize(mu, logvar)
+        return z, mu, logvar
+
+
+class Decoder(nn.Module):
+    def __init__(self, latent_dim, c_dim, hidden_dim=100):
+        super().__init__()
+        self.net = nn.ModuleList()
+        self.net.append(nn.Linear(latent_dim+c_dim, hidden_dim))
+        self.net.append(nn.BatchNorm1d(hidden_dim))
+        self.net.append(nn.SiLU())
+        for i in range(3):
+            self.net.append(nn.Linear(hidden_dim, hidden_dim))
+            self.net.append(nn.BatchNorm1d(hidden_dim))
+            self.net.append(nn.SiLU())
+        self.net.append(nn.Linear(hidden_dim, 30*30))
+        self.net.append(nn.BatchNorm1d(30*30))
+        self.net.append(nn.SiLU())
+        self.net.append(nn.Unflatten(1, (1, 30, 30)))
+        self.net.append(nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1))
+        self.net.append(nn.BatchNorm2d(64))
+        self.net.append(nn.SiLU())
+        self.net.append(nn_modules.UpSample(64))
+        self.net.append(nn.BatchNorm2d(64))
+        self.net.append(nn.SiLU())
+        self.net.append(nn_modules.UpSample(64))
+        self.net.append(nn.BatchNorm2d(64))
+        self.net.append(nn.SiLU())
+        self.net.append(nn.Conv2d(64, 1, kernel_size=3, stride=1, padding=1))
+
+    def forward(self, z, c):
+        x = torch.cat([z, c], dim=1)
+        for layer in self.net:
+            x = layer(x)
+
+        return x.view(x.size(0), 1, 120, 120)
+
+
+def EncoderDefinition():
+    img_shape = (1, 120, 120)
+    first_conv_channels = 8
+    channel_mutipliers = [1, 2, 4, 8]
+    has_attention = [False, False, True, True]
+    num_res_blocks = 1
+    norm_groups = None
+    encoder = Encoder(latent_dim, img_shape,
+                      first_conv_channels, channel_mutipliers, has_attention, num_res_blocks, norm_groups)
+    trainable_params = sum(p.numel()
+                           for p in encoder.parameters() if p.requires_grad)
+    print(
+        f"Total number of trainable parameters of Encoder: {trainable_params}")
+    return encoder
+
+
+def DecoderDefinition():
+    c_dim = 51
+    decoder = Decoder(latent_dim, c_dim)
+    trainable_params = sum(p.numel()
+                           for p in decoder.parameters() if p.requires_grad)
+    print(
+        f"Total number of trainable parameters of Decoder: {trainable_params}")
+    return decoder
+
+
+def TrainUcVAEInverseModel(encoder, decoder, filebase, train_flag, train_loader, test_loader, epochs=300, lr=5e-4):
+    class TorchTrainer(torch_trainer.TorchTrainer):
+        def __init__(self, models, device, filebase):
+            super().__init__(models, device, filebase)
+
+        def evaluate_losses(self, data):
+            images, labels = data[0].to(self.device), data[1].to(self.device)
+            z, mu, logvar = self.models[0](images)
+            recon = self.models[1](z, labels)
+            kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+            recon_loss = F.mse_loss(recon, images)
+            loss = kl_loss+recon_loss
+            loss_dic = {"loss": loss.item(), "kl_loss": kl_loss.item(),
+                        "recon_loss": recon_loss.item()}
+            return loss, loss_dic
+
+    checkpoint = torch_trainer.ModelCheckpoint(
+        monitor="loss", save_best_only=True)
+
+    trainer = TorchTrainer(
+        {"encoder": encoder, "decoder": decoder}, device, filebase)
+    lr_scheduler = {
+        "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau,
+        "params": {"factor": 0.7, "patience": 40},
+        "metric_name": "loss",
+    }
+
+    trainer.compile(
+        optimizer=torch.optim.Adam,
+        lr=lr,
+        lr_scheduler=lr_scheduler,
+        checkpoint=checkpoint,
+    )
+
+    if train_flag == "continue":
+        trainer.load_weights(device=device)
+        h = trainer.load_logs()
+
+    h = trainer.fit(
+        train_loader, val_loader=None, epochs=epochs, callbacks=checkpoint, print_freq=1
+    )
+    trainer.save_logs()
+    trainer.load_weights(device=device)
+
+    return trainer
+
+
+def LoadUcVAEDecoder(model_path=ucvae_decoder_path):
+    decoder = DecoderDefinition()
+    state_dict = torch.load(model_path, map_location=device)
+    decoder.load_state_dict(state_dict)
+    decoder.to(device)
+    decoder.eval()
+    return decoder
+
+
+def EvaluateUcVAEInverseModel(fwd_model, decoder, Ytarget, sdf_inv_scaler, stress_inv_scaler, num_sol=10, plot_flag=False):
+    Ytarget = Ytarget.to(device)
+    labels = Ytarget.repeat(num_sol, 1)
+    Z = torch.randn(num_sol, latent_dim).to(device)
+    Xpred = decoder(Z, labels)
+    with torch.no_grad():
+        Ypred = fwd_model(Xpred)
+
+    Ypred_inv = stress_inv_scaler(Ypred.cpu().detach().numpy())
+    Ytarg_inv = stress_inv_scaler(labels.cpu().detach().numpy())
+    Xpred_inv = sdf_inv_scaler(Xpred.cpu().detach().numpy())
+    L2error = np.linalg.norm(Ypred_inv - Ytarg_inv, axis=1) / \
+        np.linalg.norm(Ytarg_inv, axis=1)
+    sorted_idx = np.argsort(L2error)
+    evl_ids = np.array([
+        sorted_idx[0],
+        sorted_idx[int(len(sorted_idx) * 0.33)],
+        sorted_idx[int(len(sorted_idx) * 0.66)],
+        sorted_idx[-1],
+    ], dtype=int)
+    for i, idx in enumerate(evl_ids):
+        print(f"ID: {idx}, L2 error: {L2error[idx]}")
+
+    if plot_flag:
+        strain = np.linspace(0, 0.2, 51)
+        legends = ["best", "33\%", "66\%", "worst"]
+        fig = plt.figure(figsize=(4.8 * 5, 3.6))
+        ax = plt.subplot(1, 5, 1)
+        ax.plot(strain, Ytarg_inv[0], label="target")
+        for i, v in enumerate(evl_ids):
+            ax.plot(strain, Ypred_inv[v], label=legends[i])
+        ax.legend()
+        ax.set_xlabel(r"$\varepsilon~[\%]$")
+        ax.set_ylabel(r"$\sigma~[MPa]$")
+        for i, v in enumerate(evl_ids):
+            contours = measure.find_contours(
+                Xpred_inv[v], 0, positive_orientation="high")
+            ax = plt.subplot(1, 5, i + 2)
+            l_style = ["r-", "b--"]
+            holes = []
+            for j, contour in enumerate(contours):
+                contour = (contour - 10) / 100
+                x, y = contour[:, 1], contour[:, 0]
+                if j == 0:
+                    ax.fill(
+                        x,
+                        y,
+                        alpha=1.0,
+                        edgecolor="black",
+                        facecolor="cyan",
+                        label="Outer Boundary",
+                    )
+                else:
+                    ax.fill(x, y, alpha=1.0, edgecolor="black",
+                            facecolor="white", label="Hole")
+                # ax.grid(True)
+                ax.axis("off")
+                ax.axis("equal")  # Keep aspect ratio square
+
+
+
+# %%
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Model training arguments")
     parser.add_argument(
-        "--model", type=str, default="forward")
+        "--model", type=str, default="ucvae")
     parser.add_argument(
         "--train_flag", type=str, default="start")
     parser.add_argument("--epochs", type=int, default=300)
@@ -396,7 +630,7 @@ if __name__ == "__main__":
     args, unknown = parser.parse_known_args()
     if args.model == "forward":
         seed = 42
-    elif args.model == "inverse":
+    else:
         seed = 52
     sdf_train, stress_train, sdf_test, stress_test, sdf_inv_scaler, stress_inv_scaler, _ = LoadData(
         seed=seed)
@@ -414,7 +648,7 @@ if __name__ == "__main__":
                                     test_loader, epochs=args.epochs, lr=args.learning_rate)
         EvaluateForwardModel(trainer, test_loader,
                              sdf_inv_scaler, stress_inv_scaler)
-    elif args.model == "inverse":
+    elif args.model == "diffusion":
         filebase = diffu_inv_filebase
         inv_Unet, gaussian_diffusion = DiffusionInverseModelDefinition()
         trainer = TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion, filebase, args.train_flag,
@@ -424,5 +658,16 @@ if __name__ == "__main__":
         Ytarget = test_dataset[id][1].unsqueeze(0)
         EvaluateDiffusionInverseModel(
             fwd_model, inv_Unet, gaussian_diffusion, Ytarget, sdf_inv_scaler, stress_inv_scaler)
+    elif args.model == "ucvae":
+        filebase = ucvae_inv_filebase
+        encoder = EncoderDefinition()
+        decoder = DecoderDefinition()
+        trainer = TrainUcVAEInverseModel(encoder, decoder, filebase, args.train_flag,
+                                         train_loader, test_loader, epochs=args.epochs, lr=args.learning_rate)
+        fwd_model = LoadForwardModel()
+        id = 23
+        Ytarget = test_dataset[id][1].unsqueeze(0)
+        EvaluateUcVAEInverseModel(
+            fwd_model, decoder, Ytarget, sdf_inv_scaler, stress_inv_scaler)
 
     print(filebase, " training finished")

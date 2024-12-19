@@ -19,13 +19,13 @@ trainer = torch_trainer.TorchTrainer(
 
 # %%
 h = trainer.load_logs()
-if h is not None:
-    fig = plt.figure()
-    ax = plt.subplot(1, 1, 1)
-    ax.plot(h["loss"], label="loss")
-    ax.plot(h["val_loss"], label="val_loss")
-    ax.legend()
-    ax.set_yscale("log")
+# if h is not None:
+#     fig = plt.figure()
+#     ax = plt.subplot(1, 1, 1)
+#     ax.plot(h["loss"], label="loss")
+#     ax.plot(h["val_loss"], label="val_loss")
+#     ax.legend()
+#     ax.set_yscale("log")
 
 
 # %%
@@ -34,10 +34,11 @@ s_pred = stress_inv_scaler(s_pred)
 s_true = stress_inv_scaler(s_true)
 error_s = np.linalg.norm(s_pred-s_true, axis=1) / \
     np.linalg.norm(s_true, axis=1)
+sort_idx = np.argsort(error_s)
 
 fig = plt.figure(figsize=(4.8, 3.6))
 ax = plt.subplot(1, 1, 1)
-_ = ax.hist(error_s, bins=20)
+_ = ax.hist(error_s[sort_idx[:-5]], bins=20)
 ax.set_xlabel("L2 relative error")
 ax.set_ylabel("Frequency")
 # %%
@@ -45,7 +46,7 @@ sort_idx = np.argsort(error_s)
 idx_best = sort_idx[0]
 idx_32perc = sort_idx[int(len(sort_idx)*0.32)]
 idx_63perc = sort_idx[int(len(sort_idx)*0.63)]
-idx_95perc = sort_idx[int(len(sort_idx)*0.95)]
+idx_95perc = sort_idx[int(len(sort_idx)*0.97)]
 
 index_list = [idx_best, idx_32perc, idx_63perc, idx_95perc]
 labels = ["Best", "32th percentile", "63th percentile", "95th percentile"]
@@ -75,7 +76,7 @@ nr, nc = 1, len(index_list)
 fig = plt.figure(figsize=(nc*4.8, nr*3.6))
 for i, idx in enumerate(index_list):
     contours = measure.find_contours(
-        sdf_test_inv[idx], 0, positive_orientation='high')
+        sdf_test_inv[idx, 0], 0, positive_orientation='high')
     ax = plt.subplot(nr, nc, i+1)
     l_style = ['r-', 'b--']
     holes = []

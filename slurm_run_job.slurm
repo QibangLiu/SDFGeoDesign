@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J AI
-#SBATCH --output=./slurm_output/fwd_models%j.log
+#SBATCH --output=./slurm_output/inv_models%j.log
 #SBATCH --account=bdsy-delta-gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -19,4 +19,4 @@ which python
 # srun python3 -u fwd.py
 #srun python3 -u inv_diffu.py
 
-srun python3 -u models.py --train_flag=start --model=forward --epochs=300
+srun python3 -u models.py --train_flag=start --model=diffusion --epochs=300
