@@ -97,7 +97,6 @@ class TorchTrainer():
         lr=1e-3,
         weight_decay=0,
         loss=None,
-        loss_names=None,
         checkpoint=None,
         lr_scheduler=None,
         metrics=None,
@@ -131,6 +130,8 @@ class TorchTrainer():
                 self.metric_name = lr_scheduler["metric_name"]
             else:
                 self.metric_name = "val_loss"
+        else:
+            self.lr_scheduler = None
 
     def collect_logs(self, losses_vals={}, batch_size=1):
         for key in losses_vals:

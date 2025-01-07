@@ -893,6 +893,7 @@ class GaussianDiffusion:
         clip_denoised=True,
         conditioning=True,
         timesteps=None,
+        all_timesteps=False,
     ):
         if timesteps is None:
             timesteps = self.timesteps
@@ -917,9 +918,15 @@ class GaussianDiffusion:
                 clip_denoised,
                 conditioning=conditioning,
             )
-            imgs.append(img.cpu().numpy())
+            if all_timesteps:
+                imgs.append(img.cpu().numpy())
 
-        return np.array(imgs)
+        if all_timesteps:
+            return np.array(imgs)
+        else:
+            return img.cpu().numpy()
+
+
 
     # sample new images
     @torch.no_grad()
@@ -932,6 +939,7 @@ class GaussianDiffusion:
         clip_denoised=True,
         conditioning=True,
         timesteps=None,
+        all_timesteps=False,
     ):
         return self.p_sample_loop(
             model,
@@ -941,6 +949,7 @@ class GaussianDiffusion:
             clip_denoised,
             conditioning,
             timesteps=timesteps,
+            all_timesteps=all_timesteps
         )
 
     # use ddim to sample

@@ -46,7 +46,7 @@ sort_idx = np.argsort(error_s)
 idx_best = sort_idx[0]
 idx_32perc = sort_idx[int(len(sort_idx)*0.32)]
 idx_63perc = sort_idx[int(len(sort_idx)*0.63)]
-idx_95perc = sort_idx[int(len(sort_idx)*0.97)]
+idx_95perc = sort_idx[int(len(sort_idx)*0.95)]
 
 index_list = [idx_best, idx_32perc, idx_63perc, idx_95perc]
 labels = ["Best", "32th percentile", "63th percentile", "95th percentile"]

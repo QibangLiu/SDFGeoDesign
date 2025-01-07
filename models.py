@@ -83,7 +83,8 @@ def ForwardModelDefinition():
     )
     trainable_params = sum(p.numel()
                            for p in fwd_model.parameters() if p.requires_grad)
-    print(f"Total number of trainable parameters: {trainable_params}")
+    print(
+        f"Total number of trainable parameters of fwd model: {trainable_params}")
     return fwd_model
 
 # %%
@@ -330,7 +331,7 @@ def EvaluateDiffusionInverseModel(fwd_model, inv_Unet, gaussian_diffusion, Ytarg
     Xpred = gaussian_diffusion.sample(
         inv_Unet, (1, 120, 120), labels, w=2, clip_denoised=False, conditioning=True
     )
-    Xpred = torch.tensor(Xpred[-1]).to(device)
+    Xpred = torch.tensor(Xpred).to(device)
     with torch.no_grad():
         Ypred = fwd_model(Xpred)
     Ypred_inv = stress_inv_scaler(Ypred.cpu().detach().numpy())
