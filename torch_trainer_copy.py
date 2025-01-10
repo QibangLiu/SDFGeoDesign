@@ -10,9 +10,13 @@ import numpy as np
 
 class ModelCheckpoint:
     def __init__(
-        self, monitor="val_loss", verbose=0, save_best_only=False, mode="min", filepaths=None
+        self, filepaths=None, monitor="val_loss", verbose=0, save_best_only=False, mode="min"
     ):
-        self.filepaths = filepaths  # will be updated by the trainer compile if not provided
+        # if not isinstance(filepath,(list, tuple)):
+        #     filepath=[filepath]
+
+        # self.filepaths = filepath
+        self.filepaths = filepaths
         self.monitor = monitor
         self.verbose = verbose
         self.save_best_only = save_best_only
@@ -31,8 +35,7 @@ class ModelCheckpoint:
 
     def __call__(self, epoch, logs=None, models=None):
         if len(self.filepaths) != len(models):
-            raise ValueError(
-                "Number of models is not equal to number of filepaths")
+            raise ValueError("Number of models is not equal to number of filepaths")
 
         logs = logs or {}
         current = logs.get(self.monitor)
@@ -46,16 +49,16 @@ class ModelCheckpoint:
             if self.monitor_op(current, self.best):
                 if self.verbose > 0:
                     print(
-                        f"Epoch {epoch + 1}: \
-                            {self.monitor} improved from {self.best} to {current}, saving model to {self.filepaths}")
-
+                        f"Epoch {epoch + 1}: {self.monitor} improved from {self.best} to {current}, saving model to {self.filepaths}"
+                    )
                 self.best = current
                 for model, filepath in zip(models, self.filepaths):
                     self._save_model(model, filepath)
             else:
                 if self.verbose > 1:
                     print(
-                        f"Epoch {epoch + 1}: {self.monitor} did not improve from {self.best}")
+                        f"Epoch {epoch + 1}: {self.monitor} did not improve from {self.best}"
+                    )
         else:
             if self.verbose > 0:
                 print(f"Epoch {epoch + 1}: saving model to {self.filepaths}")
@@ -88,19 +91,14 @@ class TorchTrainer():
         for m_name in self.model_names:
             os.makedirs(os.path.join(filebase, m_name), exist_ok=True)
 
-    def parameters(self):
-        combined_params = []
-        for model in self.models:
-            combined_params += list(model.parameters())
-        return combined_params
-
     def compile(
         self,
         optimizer,
+        lr=1e-3,
+        weight_decay=0,
         loss=None,
         checkpoint=None,
         lr_scheduler=None,
-        scheduler_metric_name="val_loss",
         metrics=None,
         loss_weights=None,
         external_trainable_variables=None,
@@ -108,12 +106,14 @@ class TorchTrainer():
         combined_params = []
         for model in self.models:
             combined_params += list(model.parameters())
-        self.optimizer = optimizer
+        self.optimizer = optimizer(
+            combined_params, lr=lr, weight_decay=weight_decay)
 
         self.checkpoint = checkpoint
         if checkpoint is not None and self.checkpoint.filepaths is None:
             self.checkpoint.filepaths = [os.path.join(
                 self.filebase, m_name, 'model.ckpt') for m_name in self.model_names]
+
 
         # TODO: Add multiple loss function
         self.loss_fn = loss
@@ -121,11 +121,17 @@ class TorchTrainer():
         self.metrics = metrics
         self.loss_weights = loss_weights
         self.external_trainable_variables = external_trainable_variables
-        self.lr_scheduler = lr_scheduler
         if lr_scheduler is not None:
+            self.lr_scheduler = lr_scheduler["scheduler"](
+                self.optimizer, **lr_scheduler["params"])
             if "lr" not in self.logs:
                 self.logs["lr"] = []
-            self.metric_name = scheduler_metric_name
+            if "metric_name" in lr_scheduler:
+                self.metric_name = lr_scheduler["metric_name"]
+            else:
+                self.metric_name = "val_loss"
+        else:
+            self.lr_scheduler = None
 
     def collect_logs(self, losses_vals={}, batch_size=1):
         for key in losses_vals:
@@ -134,7 +140,7 @@ class TorchTrainer():
             self.logs[key].append(sum(losses_vals[key]) / batch_size)
 
     def print_logs(self, epoch, time):
-        print(f"Epoch {epoch + 1} took {time:.2f}s", end=", ")
+        print(f"Epochs {epoch + 1} took {time:.2f}s", end=", ")
         for key, val in self.logs.items():
             if val:
                 print(f"{key}: {val[-1]:.4e}", end=", ")
@@ -149,21 +155,10 @@ class TorchTrainer():
         return loss, loss_dic
 
     def train_step(self, data):
-        if isinstance(self.optimizer, torch.optim.LBFGS):
-            loss_dic = {}
-
-            def closure():
-                self.optimizer.zero_grad()
-                loss, loss_dic_ = self.evaluate_losses(data)
-                loss_dic.update(loss_dic_)
-                loss.backward()
-                return loss
-            self.optimizer.step(closure)
-        else:
-            self.optimizer.zero_grad()
-            loss, loss_dic = self.evaluate_losses(data)
-            loss.backward()
-            self.optimizer.step()
+        self.optimizer.zero_grad()
+        loss, loss_dic = self.evaluate_losses(data)
+        loss.backward()
+        self.optimizer.step()
         return loss_dic
 
     def validate_step(self, data):
@@ -176,9 +171,6 @@ class TorchTrainer():
     def learning_rate_decay(self, epoch):
         if self.lr_scheduler is None:
             return
-
-        if "lr" not in self.logs:
-            self.logs["lr"] = []
 
         if self.lr_scheduler.__class__.__name__ == "ReduceLROnPlateau":
             if self.metric_name in self.logs:
@@ -193,13 +185,13 @@ class TorchTrainer():
         train_loader,
         val_loader=None,
         epochs=10,
-        print_freq=1,
+        callbacks=None,
+        print_freq=20,
     ):
         ts = timeit.default_timer()
         loss_vals = {}
         for epoch in range(self.epoch_start, self.epoch_start + epochs):
             # train
-            tes = timeit.default_timer()
             for model in self.models:
                 model.train()
             loss_vals = {}
@@ -210,7 +202,7 @@ class TorchTrainer():
                         loss_vals[key] = []
                     loss_vals[key].append(value)
             self.collect_logs(loss_vals, len(train_loader))
-            # validate
+                # validate
             if val_loader is not None:
                 for model in self.models:
                     model.eval()
@@ -224,15 +216,15 @@ class TorchTrainer():
                             loss_vals[key].append(value)
                 self.collect_logs(loss_vals, len(val_loader))
             # callbacks at end of epoch
-            if self.checkpoint is not None:
-                self.checkpoint(epoch, self.logs, self.models)
+            if callbacks is not None:
+                callbacks(epoch, self.logs, self.models)
             # learning rate decay
             self.learning_rate_decay(epoch)
 
             te = timeit.default_timer()
             if (epoch + 1) % print_freq == 0:
-                self.print_logs(epoch, (te - tes))
-        print("Total training time:%.2e s" % (te - ts))
+                self.print_logs(epoch, (te - ts))
+        print("Total training time:.%2f s" % (te - ts))
         self.epoch_start = epoch + 1
         return self.logs
 
@@ -276,16 +268,11 @@ class TorchTrainer():
             filepaths = [filepaths]
 
         for model, path in zip(self.models, filepaths):
-            state_dict = torch.load(
-                path, map_location=device, weights_only=True)
+            state_dict = torch.load(path, map_location=device)
             model.load_state_dict(state_dict)
             model.eval()
 
     def predict(self, data_loader):
-        """
-        simple Predict on data_loader
-        Need to be implemented if len(self.models) > 1
-        """
         y_pred = []
         y_true = []
         self.models[0].eval()
