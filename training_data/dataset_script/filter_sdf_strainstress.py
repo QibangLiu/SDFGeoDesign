@@ -12,9 +12,8 @@ from skimage import measure
 # %%
 # Load npz data
 loaded_data = np.load(
-    '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data.npz')
+    '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/dataset/sdf_stress_strain_data.npz')
 
-# %%
 
 # %%
 
@@ -59,7 +58,7 @@ def visualize_sample(mins=10, case=500):
 
 # %%
 s_max = np.max(loaded_stress, axis=1)
-id_m = np.where((s_max > 1) & (s_max < 120))[0]
+id_m = np.where((s_max > 12) & (s_max < 92))[0]
 
 data_valid = {
     'sdf': loaded_sdf[id_m],
@@ -69,6 +68,6 @@ data_valid = {
     'y_grids': loaded_y_grids,
     'sample_ids': loaded_sample_ids[id_m]
 }
-np.savez('/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_1-120.npz', **data_valid)
+np.savez('/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/dataset/sdf_stress_strain_data_12-92.npz', **data_valid)
 
 # %%

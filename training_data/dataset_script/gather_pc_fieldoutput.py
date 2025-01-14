@@ -4,12 +4,18 @@ import matplotlib.pyplot as plt
 import os
 import natsort
 import pickle
-
+import argparse
 
 # %%
+parser = argparse.ArgumentParser()
+parser.add_argument("--setID", type=int, default=0)
+args = parser.parse_args()
+setID = args.setID
+start = setID*5000
+end = start+5000
 loaded_data = np.load(
-    "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92.npz")
-loaded_sample_ids = loaded_data['sample_ids'][10000]
+    "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/dataset/sdf_stress_strain_data_12-92.npz")
+loaded_sample_ids = loaded_data['sample_ids'][start:end]
 
 
 # %%
@@ -21,13 +27,15 @@ mises_all = []
 disp_all = []
 mesh_coords_all = []
 mesh_connect_all = []
-for sec in secs[:1]:
+for sec in secs:
     print("Processing sec: ", sec)
     samples = [f.name for f in os.scandir(sec) if f.is_dir()]
     samples = natsort.natsorted(samples)
     for sample in samples:
         print("Processing sample: ", sample)
         _, id = sample.split('_')
+        if int(id) not in loaded_sample_ids:
+            continue
         mises_fn = os.path.join(sec, sample, "mises_stress.npy")
         disp_fn = os.path.join(sec, sample, "displacement.npy")
         mesh_fn = os.path.join(sec, sample, "mesh_data.npz")
@@ -44,8 +52,8 @@ for sec in secs[:1]:
                 disp = np.concatenate(
                     [np.zeros_like(disp[0])[None], disp], axis=0)[::2]
                 mesh = np.load(mesh_fn)
-                mises_all.append(mises)
-                disp_all.append(disp)
+                mises_all.append(mises.astype(np.float32))
+                disp_all.append(disp.astype(np.float32))
                 mesh_coords_all.append(mesh['nodes_coords'])
                 mesh_connect_all.append(mesh['elements_connectivity'])
                 valid_sample_ids.append(id)
@@ -72,9 +80,10 @@ data_mesh = {"mesh_coords": mesh_coords_all, "mesh_connect": mesh_connect_all, "
              "valid_sample_ids": valid_sample_ids}
 
 
-file_path = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/pc_fieldoutput"
-os.makedirs(file_path, exist_ok=True)
+file_path = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/dataset/pc_fieldoutput/dataset_{}".format(
+    setID)
 
+os.makedirs(file_path, exist_ok=True)
 with open(os.path.join(file_path, "mises.pkl"), "wb") as f:
   pickle.dump(data_mises, f)
 
@@ -83,3 +92,5 @@ with open(os.path.join(file_path, "disp.pkl"), "wb") as f:
 
 with open(os.path.join(file_path, "mesh_pc.pkl"), "wb") as f:
   pickle.dump(data_mesh, f)
+
+# %%
