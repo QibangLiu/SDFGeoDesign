@@ -97,7 +97,7 @@ class TorchTrainer():
     def compile(
         self,
         optimizer,
-        loss=None,
+        loss_fn=None,
         checkpoint=None,
         lr_scheduler=None,
         scheduler_metric_name="val_loss",
@@ -116,7 +116,7 @@ class TorchTrainer():
                 self.filebase, m_name, 'model.ckpt') for m_name in self.model_names]
 
         # TODO: Add multiple loss function
-        self.loss_fn = loss
+        self.loss_fn = loss_fn
         # TODO:
         self.metrics = metrics
         self.loss_weights = loss_weights

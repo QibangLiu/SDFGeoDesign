@@ -19,4 +19,5 @@ which python
 # srun python3 -u fwd.py
 #srun python3 -u inv_diffu.py
 
-srun python3 -u models.py --train_flag=start --model=diffusion --epochs=300
+#srun python3 -u models.py --train_flag=start --model=diffusion --epochs=300
+srun python3 -u encoder_pconv_trans.py

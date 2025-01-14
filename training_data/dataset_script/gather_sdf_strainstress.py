@@ -58,4 +58,4 @@ data_valid = {
     'y_grids': y_grids,
     'valid_sample_ids': valid_sample_ids
 }
-np.savez('/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data.npz', **data_valid)
+np.savez('/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/dataset/sdf_stress_strain_data.npz', **data_valid)

@@ -17,7 +17,7 @@ import timeit
 import os
 import pickle
 from sklearn.model_selection import train_test_split
-import torch_trainer
+import torch_utils.torch_trainer as torch_trainer
 from skimage import measure
 import math
 from typing import Optional
@@ -27,7 +27,7 @@ from functools import lru_cache
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %%
 
-filename = './training_data/geo_sdf_randv_pcn_all.pkl'
+filename = '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/geo/geo_sdf_randv_pcn_all.pkl'
 with open(filename, "rb") as f:
     geo_data = pickle.load(f)
 vertices_all = geo_data['vertices']
@@ -283,7 +283,7 @@ class PointSetEmbedding(nn.Module):
         self.act = activation
         self.patch_size = patch_size
         self.stride = stride
-        last_channel = d_input + 2
+        last_channel = d_input + 2  # TODO: 2 is 2D 3 is 3D
         for out_channel in d_hidden:
             self.mlp_convs.append(
                 nn.Conv2d(
@@ -905,8 +905,8 @@ test_loader = DataLoader(
 
 
 class TRAINER(torch_trainer.TorchTrainer):
-    def __init__(self, models, device):
-        super().__init__(models, device)
+    def __init__(self, models, device, filebase):
+        super().__init__(models, device, filebase)
 
     def evaluate_losses(self, data):
         pc = data[0].to(self.device)
@@ -923,30 +923,33 @@ class TRAINER(torch_trainer.TorchTrainer):
         loss_dic = {"loss": loss.item()}
         return loss, loss_dic
 
-
-trainer = TRAINER([geo_encoder, sdf_NN], device)
-trainer.compile(optimizer=torch.optim.Adam, lr=5e-4, loss=nn.MSELoss())
 filebase = "./saved_model/geo_pointconv_embpoint128"
-model_path = ["encoder", "sdf_NN"]
-checkpoint_fnames = []
-for m_path in model_path:
-    m_path = os.path.join(filebase, m_path)
-    os.makedirs(m_path, exist_ok=True)
-    checkpoint_fnames.append(os.path.join(m_path, "model.ckpt"))
+trainer = TRAINER({"encoder": geo_encoder, "sdf_NN": sdf_NN}, device, filebase)
+optimizer = torch.optim.Adam(trainer.parameters(), lr=5e-4)
 checkpoint = torch_trainer.ModelCheckpoint(
-    checkpoint_fnames, monitor="val_loss", save_best_only=True
-)
+    monitor="val_loss", save_best_only=True)
+trainer.compile(optimizer, loss_fn=nn.MSELoss(), checkpoint=checkpoint)
+
+# model_path = ["encoder", "sdf_NN"]
+# checkpoint_fnames = []
+# for m_path in model_path:
+#     m_path = os.path.join(filebase, m_path)
+#     os.makedirs(m_path, exist_ok=True)
+#     checkpoint_fnames.append(os.path.join(m_path, "model.ckpt"))
+# checkpoint = torch_trainer.ModelCheckpoint(
+#     checkpoint_fnames, monitor="val_loss", save_best_only=True
+# )
 
 
 # %%
-trainer.load_weights(checkpoint_fnames, device)
-h = trainer.load_logs(filebase)
+# trainer.load_weights(device=device)
+# h = trainer.load_logs()
 # h = trainer.fit(train_loader, val_loader=test_loader,
-#                 epochs=500, callbacks=checkpoint, print_freq=1)
-trainer.save_logs(filebase)
+#                 epochs=500,  print_freq=1)
+# trainer.save_logs(filebase)
 # %%
-trainer.load_weights(checkpoint_fnames, device)
-h = trainer.load_logs(filebase)
+trainer.load_weights(device=device)
+h = trainer.load_logs()
 fig = plt.figure()
 ax = plt.subplot(1, 1, 1)
 ax.plot(h["loss"], label="loss")
@@ -974,14 +977,16 @@ error_s = np.linalg.norm(sd_pred_test-sd_ture_test, axis=1) / \
 
 fig = plt.figure(figsize=(4.8, 3.6))
 ax = plt.subplot(1, 1, 1)
-_ = ax.hist(error_s, bins=20)
 
-
+_ = ax.hist(error_s, bins=20, color="skyblue", edgecolor="black")
+ax.set_xlabel("L2 relative error")
+ax.set_ylabel("Frequency")
 # %%
 sort_idx = np.argsort(error_s)
 min_index = sort_idx[0]
 max_index = sort_idx[int(len(sort_idx)*0.97)]
 median_index = sort_idx[len(sort_idx) // 2]
+titles = ["best", "50% percentile", "97% percentile"]
 # # Print the indexes
 print("Index for minimum geo:", min_index,
       "with error", error_s[min_index])
@@ -1016,7 +1021,19 @@ for i, index in enumerate(min_median_max_index):
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     ax.set_aspect("equal")
+    ax.set_title(f"{titles[i]}")
 
     plt.tight_layout()
 
+# %%
+fig = plt.figure()
+ax = fig.add_subplot(111)
+pc = dataset_test[median_index][0].cpu().numpy()
+ax.scatter(pc[0], pc[1], c='b', s=2, marker='o',)
+# ax.set_xlabel('X')
+# ax.set_ylabel('Y')
+ax.axis('equal')
+ax.axis('off')
+
+plt.show()
 # %%

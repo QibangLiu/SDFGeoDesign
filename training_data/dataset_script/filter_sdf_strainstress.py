@@ -14,6 +14,10 @@ from skimage import measure
 loaded_data = np.load(
     '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data.npz')
 
+# %%
+
+# %%
+
 # Access data
 loaded_sdf = loaded_data['sdf']
 loaded_stress = loaded_data['stress']

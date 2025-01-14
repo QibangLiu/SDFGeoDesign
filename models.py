@@ -155,6 +155,7 @@ def LoadForwardModel(model_path=fwd_model_path):
 def TrainForwardModel(fwd_model, filebase, train_flag, train_loader, test_loader, epochs=300, lr=5e-4):
     trainer = torch_trainer.TorchTrainer(
         fwd_model, device, filebase)
+
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="val_loss", save_best_only=True
     )
@@ -163,8 +164,9 @@ def TrainForwardModel(fwd_model, filebase, train_flag, train_loader, test_loader
         "params": {"factor": 0.7, "patience": 40},
         "metric_name": "val_loss",
     }
-    trainer.compile(optimizer=torch.optim.Adam, lr=lr, lr_scheduler=lr_scheduler,
-                    loss=nn.MSELoss(), checkpoint=checkpoint)
+    optimizer = torch.optim.Adam(trainer.parameters(), lr=lr)
+    trainer.compile(optimizer=optimizer, lr_scheduler=lr_scheduler,
+                    loss_fn=nn.MSELoss(), checkpoint=checkpoint)
     if train_flag == "continue":
         trainer.load_weights(device=device)
         h = trainer.load_logs()
@@ -271,6 +273,7 @@ def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion, filebase, train_fla
             super().__init__(model, device, filebase)
 
         def evaluate_losses(self, data):
+            '''custom loss'''
             images, labels = data[0].to(self.device), data[1].to(self.device)
             batch_size = images.shape[0]
             # random generate mask
@@ -284,23 +287,22 @@ def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion, filebase, train_fla
             loss = gaussian_diffusion.train_losses(
                 self.models[0], images, t, labels, batch_mask
             )
-            loss_dic = {"loss": loss.item()}
-            return loss, loss_dic
+            loss_tracker = {"loss": loss.item()}
+            return loss, loss_tracker
+
+    trainer = TorchTrainer(inv_Unet, device, filebase)
 
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="loss", save_best_only=True)
 
-    trainer = TorchTrainer(inv_Unet, device, filebase)
-    lr_scheduler = {
-        "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau,
-        "params": {"factor": 0.7, "patience": 40},
-        "metric_name": "loss",
-    }
+    optimizer = torch.optim.Adam(trainer.parameters(), lr=lr)
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, factor=0.7, patience=40)
     trainer.compile(
-        optimizer=torch.optim.Adam,
-        lr=lr,
+        optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         checkpoint=checkpoint,
+        scheduler_metric_name="loss",
     )
 
     if train_flag == "continue":
@@ -308,7 +310,7 @@ def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion, filebase, train_fla
         h = trainer.load_logs()
 
     h = trainer.fit(
-        train_loader, val_loader=None, epochs=epochs, callbacks=checkpoint, print_freq=1
+        train_loader, val_loader=None, epochs=epochs, print_freq=1
     )
     trainer.save_logs()
     trainer.load_weights(device=device)

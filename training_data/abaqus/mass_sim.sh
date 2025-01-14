@@ -8,7 +8,7 @@
 
 start=0
 end_sec=199
-num_groups=25
+num_groups=25 # number of simultaneous jobs to run
 sections=$(seq $start $end_sec)
 total_sections=$(($end_sec - $start + 1))
 group_size=$((($total_sections) / $num_groups))
