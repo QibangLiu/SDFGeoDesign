@@ -270,7 +270,7 @@ class TRAINER(torch_trainer.TorchTrainer):
         return loss, loss_dic
 
 
-filebase = "./saved_model/geo_pointconv_embpoint128_simple_reduceLN"
+filebase = "./saved_models/geo_pointconv_embpoint128_simple"
 trainer = TRAINER({"encoder": geo_encoder, "sdf_NN": sdf_NN}, device, filebase)
 optimizer = torch.optim.Adam(trainer.parameters(), lr=5e-4)
 checkpoint = torch_trainer.ModelCheckpoint(
