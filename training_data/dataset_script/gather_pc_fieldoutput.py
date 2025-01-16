@@ -54,7 +54,7 @@ for sec in secs:
                 mesh = np.load(mesh_fn)
                 mises_all.append(mises.astype(np.float32))
                 disp_all.append(disp.astype(np.float32))
-                mesh_coords_all.append(mesh['nodes_coords'])
+                mesh_coords_all.append(mesh['nodes_coords'].astype(np.float32))
                 mesh_connect_all.append(mesh['elements_connectivity'])
                 valid_sample_ids.append(id)
 
@@ -66,7 +66,7 @@ with open(geos_file, "rb") as f:
 # vertices_all = geo_data['vertices']
 # inner_loops_all = geo_data['inner_loops']
 # out_loop_all = geo_data['out_loop']
-points_cloud_all = geo_data['points_cloud']
+points_cloud_all = geo_data['points_cloud'].astype(np.float32)
 # sdf_all = geo_data['sdf']
 # x_grids = geo_data['x_grids']
 # y_grids = geo_data['y_grids']
