@@ -1,4 +1,5 @@
 # %%
+from torch.nn.utils.rnn import pad_sequence
 import torch.nn as nn
 from typing import List, Optional, Tuple, Union
 from models.modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
@@ -20,7 +21,7 @@ import timeit
 import os
 import pickle
 from sklearn.model_selection import train_test_split
-import torch_utils.torch_trainer as torch_trainer
+import trainer.torch_trainer as torch_trainer
 from skimage import measure
 import math
 from typing import Optional
@@ -30,7 +31,7 @@ from functools import lru_cache
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %%
 
-filename = '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/geo/geo_sdf_randv_pcn_all.pkl'
+filename = '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/geo/geo_sdf_randv_all.pkl'
 with open(filename, "rb") as f:
     geo_data = pickle.load(f)
 vertices_all = geo_data['vertices']
@@ -229,7 +230,10 @@ print("Total number of parameters of sdf_NN: ", sum(p.numel()
 # %%
 x_grids = geo_data['x_grids'].astype(np.float32)
 y_grids = geo_data['y_grids'].astype(np.float32)
-points_cloud_all = geo_data['points_cloud'][:, :, :2].astype(np.float32)
+points_cloud_all = [torch.tensor(x[:, :2], dtype=torch.float32)
+                    for x in points_cloud_all]
+points_cloud_all = pad_sequence(
+    points_cloud_all, batch_first=True, padding_value=-1.0)
 sdf_all = np.array(geo_data['sdf'], dtype=np.float32)
 
 sdf_shift, sdf_scale = np.mean(sdf_all), np.std(sdf_all)
@@ -270,7 +274,7 @@ class TRAINER(torch_trainer.TorchTrainer):
         return loss, loss_dic
 
 
-filebase = "./saved_models/geo_pointconv_embpoint128_simple"
+filebase = "./saved_models/geo_pointconv_embpoint128_sequence"
 trainer = TRAINER({"encoder": geo_encoder, "sdf_NN": sdf_NN}, device, filebase)
 optimizer = torch.optim.Adam(trainer.parameters(), lr=5e-4)
 checkpoint = torch_trainer.ModelCheckpoint(

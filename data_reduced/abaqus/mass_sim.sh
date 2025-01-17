@@ -22,6 +22,6 @@ do
     end=$((end + 1))
   fi
   echo "Submitting job for sections: $start to $end"
-  sbatch slurm_abq_sim.slurm $start $end
+  sbatch slurm_abq_sim.sh $start $end
   start=$((end + 1))
 done

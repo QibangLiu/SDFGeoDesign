@@ -9,6 +9,7 @@ mises = np.load(file_base + "mises_stress.npy")
 U = np.load(file_base + "displacement.npy")
 mesh = np.load(file_base + "mesh_data.npz")
 
+
 # %%
 coord = mesh['nodes_coords']
 ele_conec = mesh['elements_connectivity']

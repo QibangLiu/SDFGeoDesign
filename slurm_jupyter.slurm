@@ -4,10 +4,10 @@
 #SBATCH --account=bdsy-delta-gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=16    # <- match to OMP_NUM_THREADS
+#SBATCH --cpus-per-task=32    # <- match to OMP_NUM_THREADS
 #SBATCH --partition=gpuA100x4 ##-interactive      # <- or one of: gpuA100x4 gpuA40x4 gpuA100x8 gpuMI100x8
 #SBATCH --time=02:00:00      # hh:mm:ss for the jo
-#SBATCH --mem=32g #<62.5?
+#SBATCH --mem=64g #<62.5?
 
 # # ### GPU options ###
 #SBATCH --gpus-per-node=1

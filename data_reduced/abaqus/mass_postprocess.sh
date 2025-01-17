@@ -23,6 +23,6 @@ do
   fi
   end_python=$((end + 1))  # need +1 because python is 0-indexed, # TODO
   echo "Submitting job for sections: $start to $end_python"
-  sbatch slurm_postprocess.slurm $start $end
+  sbatch slurm_postprocess.slurm $start $end_python
   start=$((end + 1))
 done

@@ -12,5 +12,5 @@
 sec_id_s="$1"
 sec_id_e="$2"
 
-#/projects/bbkg/Abaqus/2024/Commands/abaqus python extract_strain_stress.py 190 200
+#/projects/bbkg/Abaqus/2024/Commands/abaqus python -u extract_strain_stress.py $sec_id_s $sec_id_e
 /projects/bbkg/Abaqus/2024/Commands/abaqus python -u extract_field_results.py $sec_id_s $sec_id_e

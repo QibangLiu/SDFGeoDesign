@@ -27,7 +27,7 @@ sec_id_e="$2"
 for sec_id in $(seq $sec_id_s $sec_id_e); do
     # Set working directory
     file_base="/work/hdd/bbpq/qibang/repository_Wbbpq/TRAINING_DATA/GeoSDF/abaqus/femDataR1/"
-    working_pre="${file_base}sec_${sec_id}"
+    working_pre="${file_base}/sec_${sec_id}"
     # List subdirectories in sorted natural order
     mapfile -t working_dirs < <(find "$working_pre" -mindepth 1 -maxdepth 1 -type d | sort -V)
 

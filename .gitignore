@@ -5,3 +5,6 @@
 **/.vscode/
 **/dataset/
 __pycache__/
+*.rpy.*
+*.rpy
+*.rec

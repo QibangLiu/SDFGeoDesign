@@ -112,6 +112,7 @@ file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced
 sec_id_start, sec_id_end = int(sys.argv[1]), int(sys.argv[2])
 count = 0
 rerun_fem = False
+remove_lck = True
 time_start = timeit.default_timer()
 for sec_id in range(sec_id_start, sec_id_end):
     file_pre = os.path.join(file_base, f"sec_{sec_id}")
@@ -126,7 +127,7 @@ for sec_id in range(sec_id_start, sec_id_end):
         stress_file = os.path.join(working_dir, "mises_stress.npy")
         disp_file = os.path.join(working_dir, "displacement.npy")
         mesh_file = os.path.join(working_dir, "mesh_data.npy")
-        if os.path.exists(lck_file):
+        if os.path.exists(lck_file) and remove_lck:
             os.remove(lck_file)
         if os.path.exists(odb_file) and (not os.path.exists(stress_file)
                                          or not os.path.exists(disp_file) or not os.path.exists(mesh_file)):

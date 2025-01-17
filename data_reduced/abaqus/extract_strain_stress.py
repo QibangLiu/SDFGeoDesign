@@ -58,6 +58,7 @@ file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced
 sec_id_start, sec_id_end = int(sys.argv[1]), int(sys.argv[2])
 count = 0
 rerun_fem = False
+remove_lck = True
 for sec_id in range(sec_id_start, sec_id_end):
     file_pre = os.path.join(file_base, f"sec_{sec_id}")
     sample_idxs = [int(f.name.split('_')[1])
@@ -68,6 +69,8 @@ for sec_id in range(sec_id_start, sec_id_end):
     for working_dir in working_dirs:
         odb_file = os.path.join(working_dir, "MyJob.odb")
         lck_file = os.path.join(working_dir, "MyJob.lck")
+        if os.path.exists(lck_file) and remove_lck:
+            os.remove(lck_file)
         if os.path.exists(odb_file) and not os.path.exists(os.path.join(working_dir, "stress_strain.csv")):
             if os.path.exists(lck_file) and rerun_fem:
                 rerun_abaqus(working_dir)
