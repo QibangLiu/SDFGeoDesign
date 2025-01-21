@@ -1,9 +1,11 @@
 # %%
+from skimage.measure import points_in_poly
+from scipy.spatial import cKDTree
 from skimage import measure
 import pandas as pd
 from shapely.ops import linemerge
 from shapely.ops import unary_union
-from shapely.geometry import LineString, Polygon, box, MultiPolygon, Point
+from shapely.geometry import LineString, Polygon, box, MultiPolygon, Point, MultiPoint
 import networkx as nx
 import numpy as np
 import pickle
@@ -14,7 +16,7 @@ import os
 import timeit
 import json
 # %%
-geos_file = '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/geo/geo_sdf_randv_pcn_all.pkl'
+geos_file = '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/geo/geo_sdf_randv_all.pkl'
 with open(geos_file, "rb") as f:
     geo_data = pickle.load(f)
 vertices_all = geo_data['vertices']
@@ -26,7 +28,7 @@ x_grids = geo_data['x_grids']
 y_grids = geo_data['y_grids']
 grid_points = np.vstack([x_grids.ravel(), y_grids.ravel()]).T
 # %%
-sdf_ss_file = '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92.npz'
+sdf_ss_file = '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/sdf_stress_strain_data_12-92.npz'
 sdf_ss_data = np.load(sdf_ss_file)
 sdf_ss = sdf_ss_data['sdf']
 stress = sdf_ss_data['stress']
@@ -97,8 +99,14 @@ def get_periodic_geo(cut_polygon, x0, y0=0.0, ensure_perodic_tb=True):
             if not got_it:
                 rm_ids.append(t)
         vertices_new = np.delete(vertices_new, rm_ids, axis=0)
-
-    out_loop_new = np.array(range(len(vertices_new)), dtype=int)
+    # remove the last point to avoid duplicate
+    if np.isclose(vertices_new[0], vertices_new[-1]).all():
+        vertices_new = vertices_new[:-1]
+        # Add the first point to the end to close the loop
+        out_loop_new = np.arange(len(vertices_new))
+        out_loop_new = np.append(out_loop_new, 0)
+    else:
+        raise ValueError('The outer of polygon is not closed')
 
     inner_loops_new = []
     for interior in interiors_coords:
@@ -143,6 +151,39 @@ def SDF_from_GEO(vertices_z, inner_loops, out_loop, grid_points):
     return signed_distances
 
 
+def get_point_cloud_from_polygon(polygon):
+    xmin, xmax, ymin, ymax = 0, 1, 0, 1
+    x = np.linspace(xmin, xmax, 32)
+    y = np.linspace(xmin, xmax, 32)
+    # Extract boundary points
+    top_row = np.column_stack((x, np.full_like(x, ymin)))
+    bottom_row = np.column_stack((x, np.full_like(x, ymax)))
+    left_column = np.column_stack((np.full_like(y, xmin), y))
+    right_column = np.column_stack((np.full_like(y, xmax), y))
+    # Combine boundary points and add zero column
+    XY = np.vstack((top_row, bottom_row, left_column, right_column))
+    XY = np.hstack((XY, np.zeros((XY.shape[0], 1))))
+
+    verts = np.array(polygon.exterior.coords)  # Outer boundary
+    inside_boundary_outside_interior = points_in_poly(
+        XY, verts)
+    if polygon.interiors:  # Check if there are holes
+        for interior in polygon.interiors:
+            hole_vertices = np.array(interior.coords)  # Hole vertices
+            inside_interior = points_in_poly(XY, hole_vertices)
+            inside_boundary_outside_interior = np.logical_and(
+                inside_boundary_outside_interior, ~inside_interior)
+            verts = np.vstack((verts, hole_vertices))
+    XY = XY[inside_boundary_outside_interior]
+    tree = cKDTree(verts)
+    distances, _ = tree.query(XY)
+    tree = cKDTree(vertices)
+    not_close_points = XY[distances > 0.4/32]
+    points_cloud = np.concatenate([verts, not_close_points], axis=0)
+    return points_cloud
+
+
+
 def shift_geo(filter_sample_id, num_shifts=4):
     geo_id = sample_ids[filter_sample_id]
     vertices = vertices_all[geo_id]
@@ -154,7 +195,12 @@ def shift_geo(filter_sample_id, num_shifts=4):
     SDFs_new = []
     stress_new = []
     geo_ids = []
+    pc_new = []
     filter_sample_ids = []
+    vertices_new_list = []
+    inner_loops_new_list = []
+    out_loop_new_list = []
+    x0_shift = []
     while got_num < num_shifts and try_num < 100:
         x0 = np.random.uniform(0.1, 0.9)
         cut_polygon = get_polygon(vertices, out_loop, inner_loops, x0)
@@ -162,32 +208,49 @@ def shift_geo(filter_sample_id, num_shifts=4):
             got_num += 1
             vertices_new, out_loop_new, inner_loops_new = get_periodic_geo(
                 cut_polygon, x0)
+            vertices_new_list.append(vertices_new)
+            inner_loops_new_list.append(inner_loops_new)
+            out_loop_new_list.append(out_loop_new)
             SDF = SDF_from_GEO(vertices_new, inner_loops_new,
                                out_loop_new, grid_points)
             SDFs_new.append(SDF)
             stress_new.append(stress[idx])
             geo_ids.append(geo_id)
             filter_sample_ids.append(filter_sample_id)
+            pc = get_point_cloud_from_polygon(cut_polygon)
+            pc_new.append(pc)
+            x0_shift.append(x0)
         try_num += 1
-    return SDFs_new, stress_new, geo_ids, filter_sample_ids
+    return pc_new, SDFs_new, stress_new, geo_ids, filter_sample_ids, vertices_new_list, inner_loops_new_list, out_loop_new_list, x0_shift
+
 
 
 # %%
 geo_ids = []
 SDFs_new = []
+points_cloud_new = []
 stress_new = []
 filter_sample_ids = []
-start, end = 0, len(sample_ids)
+vertices_new = []
+inner_loops_new = []
+out_loop_new = []
+x0_shift = []
+start, end = 0, 10000
 start_time = timeit.default_timer()
-num_shifts = 3
+num_shifts = 4
 for idx in range(start, end):
     try:
-        shift_SDFs, shift_stress, shift_geo_id, shift_filter_sample_id = shift_geo(
+        shift_pc, shift_SDFs, shift_stress, shift_geo_id, shift_filter_sample_id, vertices_a, inner_loops_a, out_loop_a, x0s = shift_geo(
             idx, num_shifts)
         SDFs_new.extend(shift_SDFs)
         stress_new.extend(shift_stress)
         geo_ids.extend(shift_geo_id)
         filter_sample_ids.extend(shift_filter_sample_id)
+        points_cloud_new.extend(shift_pc)
+        vertices_new.extend(vertices_a)
+        inner_loops_new.extend(inner_loops_a)
+        out_loop_new.extend(out_loop_a)
+        x0_shift.extend(x0s)
     except Exception as e:
         print(f'Error: {e}, idx={idx}')
 
@@ -197,91 +260,16 @@ SDFs_new = np.array(SDFs_new).reshape(-1, *x_grids.shape)
 stress_new = np.array(stress_new)
 geo_ids = np.array(geo_ids)
 filter_sample_ids = np.array(filter_sample_ids)
-data_new = {'sdf': SDFs_new, 'stress': stress_new, 'strain': strain,
+data_new = {'sdf': SDFs_new, 'stress': stress_new, 'strain': strain, 'points_cloud': points_cloud_new,
             'sample_ids': geo_ids, 'filter_sample_ids': filter_sample_ids, 'x_grids': x_grids, 'y_grids': y_grids}
-
-file_new = f'/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92_shift{num_shifts}_{start}-{end}.npz'
-
-np.savez(file_new, **data_new)
-
-# cut_polygon = get_polygon(vertices, out_loop, inner_loops, 0.5)
-# vertices_new, out_loop_new, inner_loops_new = get_periodic_geo(
-#     cut_polygon, 0.5)
-# SDF = SDF_from_GEO(vertices_new, inner_loops_new, out_loop_new, grid_points)
-
+data_new_geo = {'vertices': vertices_new, 'inner_loops': inner_loops_new,
+                'out_loop': out_loop_new, 'x0_shift': x0_shift, 'sample_ids': geo_ids, 'filter_sample_ids': filter_sample_ids}
 # %%
-# plt.plot(vertices_new[out_loop_new, 0], vertices_new[out_loop_new, 1], 'o-')
-# for loop in inner_loops_new:
-#     plt.plot(vertices_new[loop, 0], vertices_new[loop, 1], '*-')
-
-# contours=measure.find_contours(SDF.reshape(*x_grids.shape),
-#                       0, positive_orientation='high')
-
-# contour = contours[0]
-# scale_x, shift_x = np.max(contour[:, 1]) - \
-#     np.min(contour[:, 1]), np.min(contour[:, 1])
-# scale_y, shift_y = np.max(contour[:, 0]) - \
-#     np.min(contour[:, 0]), np.min(contour[:, 0])
-# plt.plot((contour[:, 1]-shift_x)/scale_x,
-#          (contour[:, 0]-shift_y)/scale_y, 'r--', linewidth=2)
-# for contour in contours[1:]:
-#     plt.plot((contour[:, 1]-shift_x)/scale_x,
-#              (contour[:, 0]-shift_y)/scale_y, 'b--', linewidth=2)
-
-# %%
-
-
-# def ndarray_to_list(obj):
-#     if isinstance(obj, np.ndarray):
-#         return obj.tolist()
-#     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-
-
-# file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/abaqus/test_augmentation"
-# working_dir = os.path.join(
-#     file_base, f'sample_{geo_id}_x0_{x0:.2f}_y0_{y0:.2f}')
-# os.makedirs(working_dir, exist_ok=True)
-# sample_data = {
-#     'vertices': vertices_new,
-#     'inner_loops': inner_loops_new,
-#     'out_loop': out_loop_new,
-# }
-# sample_file = os.path.join(working_dir, 'sample.json')
-# with open(sample_file, 'w') as f:
-#     json.dump(sample_data, f, default=ndarray_to_list)
-
-# # %%
-# working_dir = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/abaqus/test_augmentation/sample_0_x0_0.70_y0_0.00"
-# stress_strain_file = os.path.join(working_dir, 'stress_strain.csv')
-# stress_strain_data = pd.read_csv(stress_strain_file)
-
-# working_dir = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/abaqus/test_augmentation/sample_0_x0_0.50_y0_0.00"
-# stress_strain_file = os.path.join(working_dir, 'stress_strain.csv')
-# stress_strain_data1 = pd.read_csv(stress_strain_file)
-
-# working_dir = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/abaqus/test_augmentation/sample_0_x0_0.05_y0_0.00"
-# stress_strain_file = os.path.join(working_dir, 'stress_strain.csv')
-# stress_strain_data2 = pd.read_csv(stress_strain_file)
-
-# working_dir = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/abaqus/test_augmentation/sample_0_x0_0.00_y0_0.00"
-# stress_strain_file = os.path.join(working_dir, 'stress_strain.csv')
-# stress_strain_data3 = pd.read_csv(stress_strain_file)
-
-# working_dir = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/abaqus/test_augmentation/sample_0_x0_0.55_y0_0.35"
-# stress_strain_file = os.path.join(working_dir, 'stress_strain.csv')
-# stress_strain_data4 = pd.read_csv(stress_strain_file)
-
-
-# # plt.plot(strain, stress[idx])
-# plt.plot(stress_strain_data['strain'],
-#          stress_strain_data['stress'], '-', label='x0=0.7,y0=0.0')
-# plt.plot(stress_strain_data1['strain'],
-#          stress_strain_data1['stress'], '--', label='x0=0.5,y0=0.0')
-# plt.plot(stress_strain_data2['strain'],
-#          stress_strain_data2['stress'], '--', label='x0=0.05,y0=0.0')
-# plt.plot(stress_strain_data3['strain'],
-#          stress_strain_data3['stress'], '--', label='x0=0.00,y0=0.0')
-# plt.plot(stress_strain_data4['strain'],
-#          stress_strain_data4['stress'], '--', label='x0=0.55,y0=0.35')
-# plt.legend()
-# # %%
+file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation"
+os.makedirs(file_base, exist_ok=True)
+file_data_new = f'{file_base}/pc_sdf_stress_strain_12-92_shift{num_shifts}_{start}-{end}.pkl'
+file_data_new_geo = f'{file_base}/geo_12-92_shift{num_shifts}_{start}-{end}.pkl'
+with open(file_data_new, "wb") as f:
+    pickle.dump(data_new, f)
+with open(file_data_new_geo, "wb") as f:
+    pickle.dump(data_new_geo, f)
