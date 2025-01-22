@@ -25,5 +25,5 @@ which python
 #python gather_data.py
 #srun python -u ../gather_sdf_strainstress.py
 
-srun python -u augmentation_data.py
-#srun python -u gather_augmentaition_shift4_ID0-10000.py
+#srun python -u augmentation_data.py
+srun python -u gather_augmentaition_shift4_ID0-10000.py

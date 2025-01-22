@@ -1,5 +1,5 @@
 # %%
-from models_implicit import LoadData
+from models.configs import LoadData
 from torch.nn.utils.rnn import pad_sequence
 import torch.nn as nn
 from typing import List, Optional, Tuple, Union
@@ -22,7 +22,7 @@ import timeit
 import os
 import pickle
 from sklearn.model_selection import train_test_split
-import trainer.torch_trainer as torch_trainer
+import models.trainer.torch_trainer as torch_trainer
 from skimage import measure
 import math
 from typing import Optional
@@ -242,7 +242,7 @@ sdf_all_norm = (sdf_all-sdf_shift)/sdf_scale
 grid_coor = np.vstack([x_grids.ravel(), y_grids.ravel()]).T
 SDFs = torch.tensor(sdf_all_norm)
 grid_coor = torch.tensor(grid_coor).to(device)
-points_cloud = torch.tensor(points_cloud_all).permute(0, 2, 1)
+points_cloud = points_cloud_all.permute(0, 2, 1)
 
 pc_train, pc_test, SDF_train, SDF_test = train_test_split(
     points_cloud[:], SDFs[:], test_size=0.2, random_state=42)
@@ -360,10 +360,10 @@ for i, index in enumerate(min_median_max_index):
                     linewidth=2, label="Predicted")
         else:
             ax.plot(contour[:, 1], contour[:, 0], '--b', linewidth=2)
-
-    pc_plot = pc_test[index].cpu().numpy()
-    pc_plot_ = (pc_plot)*119/1.2
-    ax.plot(pc_plot_[0, :], pc_plot_[1, :], "x")
+    # pc=pc*1.2/119-0.1
+    # pc_plot = pc_test[index].cpu().numpy()
+    # pc_plot_ = (pc_plot+0.1)*119/1.2
+    # ax.plot(pc_plot_[0, :], pc_plot_[1, :], "x")
     ax.legend()
     ax.set_xlabel("x")
     ax.set_ylabel("y")
@@ -396,7 +396,7 @@ x_grids = data['x_grids'].astype(np.float32)
 y_grids = data['y_grids'].astype(np.float32)
 
 sdf = sdf.reshape(-1, 120 * 120)
-sdf_shift, sdf_scale = np.mean(sdf), np.std(sdf)
+# sdf_shift, sdf_scale = np.mean(sdf), np.std(sdf)
 sdf_norm = (sdf - sdf_shift) / sdf_scale
 # sdf_norm = sdf_norm.reshape(-1, 1, 120, 120)
 stress_shift, stress_scale = np.mean(stress), np.std(stress)

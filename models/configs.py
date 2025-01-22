@@ -10,6 +10,9 @@ import pickle
 from sklearn.model_selection import train_test_split
 
 # %%
+
+script_path = os.path.dirname(os.path.abspath(__file__))
+
 data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset"
 data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift4_0-10000_aug.pkl"
 
@@ -67,7 +70,7 @@ def models_configs(*args, **kwargs):
     # GeoEncoder parameters
     out_c = 128
     latent_d = 128
-    geo_encoder_file_base = f"./saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}"
+    geo_encoder_file_base = f"{script_path}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}"
     geo_encoder_model_params = {
         "out_c": out_c,
         "latent_d": latent_d,
@@ -97,9 +100,24 @@ def models_configs(*args, **kwargs):
                         "has_attention": has_attention,
                         "first_conv_channels": first_conv_channels,
                         "num_res_blocks": num_res_blocks}
-    fwd_filebase = f"./saved_weights/fwdmodel_outc{out_c}_latentdim{latent_d}"
+    fwd_filebase = f"{script_path}/saved_weights/fwdmodel_outc{out_c}_latentdim{latent_d}"
     fwd_params = {"model_params": fwd_model_params, "filebase": fwd_filebase}
 
-    params_all = {"GeoEncoder": geo_encoder_params, "ForwardModel": fwd_params}
+    channel_multpliers = [1, 2, 4, 8]
+    has_attention = [False, False, True, True]
+    fist_conv_channels = 32
+    num_heads = 4
+    norm_groups = 16
+    num_res_blocks = 1
+    total_timesteps = 500
+    inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_outc{out_c}_latentdim{latent_d}"
+    inv_diffusion_model_params = {"img_shape": img_shape, "channel_multpliers": channel_multpliers,
+                                  "has_attention": has_attention, "fist_conv_channels": fist_conv_channels,
+                                  "num_heads": num_heads, "norm_groups": norm_groups, "num_res_blocks": num_res_blocks,
+                                  "total_timesteps": total_timesteps}
+    inv_diffusion_params = {
+        "model_params": inv_diffusion_model_params, "filebase": inv_diffusion_filebase}
 
+    params_all = {"GeoEncoder": geo_encoder_params,
+                  "ForwardModel": fwd_params, "InvDiffusion": inv_diffusion_params}
     return params_all

@@ -43,7 +43,8 @@ def beta_scheduler(tot_timesteps, type="linear", s=0.008):
 
 
 class GaussianDiffusion:
-    def __init__(self, timesteps=1000, beta_schedule="linear"):
+    def __init__(self, img_shape, timesteps=1000, beta_schedule="linear"):
+        self.img_shape = img_shape
         self.timesteps = timesteps
 
         self.betas = beta_scheduler(timesteps, type=beta_schedule)
@@ -273,14 +274,16 @@ class GaussianDiffusion:
     def sample(
         self,
         model,
-        image_shape,
         labels,
         w=2,
+        image_shape=None,
         clip_denoised=True,
         conditioning=True,
         timesteps=None,
         all_timesteps=False,
     ):
+        if image_shape is None:
+            image_shape = self.img_shape
         return self.p_sample_loop(
             model,
             image_shape,
@@ -297,8 +300,9 @@ class GaussianDiffusion:
     def ddim_sample(
         self,
         model,
-        image_shape,
+
         labels,
+        image_shape=None,
         ddim_timesteps=50,
         w=2,
         ddim_discr_method="uniform",
@@ -306,6 +310,8 @@ class GaussianDiffusion:
         clip_denoised=True,
         conditioning=True,
     ):
+        if image_shape is None:
+            image_shape = self.img_shape
         # make ddim timestep sequence
         if ddim_discr_method == "uniform":
             c = self.timesteps // ddim_timesteps

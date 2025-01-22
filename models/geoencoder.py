@@ -198,7 +198,7 @@ def GeoEncoderModelDefinition(out_c=128, latent_d=128,
         num_heads=num_heads, cross_attn_layers=cross_attn_layers,
         self_attn_layers=self_attn_layers)
     sdf_NN = implicit_sdf(latent_d=latent_d)
-    print("Total number of parameters of encoder: ", sum(p.numel()
+    print("Total number of parameters of Geo encoder: ", sum(p.numel()
                                                          for p in geo_encoder.parameters()))
     print("Total number of parameters of sdf_MLP: ", sum(p.numel()
                                                          for p in sdf_NN.parameters()))
@@ -316,8 +316,9 @@ if __name__ == "__main__":
 
     configs = models_configs()
     filebase = configs["GeoEncoder"]["filebase"]
-    print(filebase)
     model_params = configs["GeoEncoder"]["model_params"]
+    print(f"\n\nGeoEncoder Filebase: {filebase}, model_params:")
+    print(model_params)
     geo_encoder, sdf_NN = GeoEncoderModelDefinition(**model_params)  # TODO
     trainer = TrainGeoEncoderModel(geo_encoder, sdf_NN, filebase, args.train_flag,
                                    epochs=args.epochs, lr=args.learning_rate)

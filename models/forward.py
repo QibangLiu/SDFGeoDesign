@@ -1,6 +1,7 @@
 # %%
+import os
 from geoencoder import LoadGeoEncoderModel
-from typing import List, Optional, Tuple, Union
+from modules.UNets import UNet
 import argparse
 import trainer.torch_trainer as torch_trainer
 from torch.utils.data import DataLoader
@@ -9,9 +10,9 @@ import torch.nn as nn
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
-import os
 from configs import models_configs, LoadData
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %%
 
@@ -27,7 +28,7 @@ class ForwardModel(nn.Module):
         norm_groups=8,
     ):
         super().__init__()
-        self.unet = nn_modules.UNet(
+        self.unet = UNet(
             img_shape,
             first_conv_channels,
             channel_mutipliers,
@@ -87,7 +88,8 @@ def ForwardModelDefinition(img_shape=(1, 128, 128),
 # %%
 
 
-def LoadForwardModel(model_path, model_params):
+def LoadForwardModel(filebase, model_params):
+    model_path = os.path.join(filebase, "model.ckpt")
     fwd_model = ForwardModelDefinition(**model_params)
     state_dict = torch.load(model_path, map_location=device, weights_only=True)
     fwd_model.load_state_dict(state_dict)
@@ -111,6 +113,7 @@ def TrainForwardModel(fwd_model, geo_encoder, filebase, train_flag, epochs=300, 
             self.geo_encoder = geo_encoder
             for param in geo_encoder.parameters():
                 param.requires_grad = False
+            self.geo_encoder.eval()
 
         def evaluate_losses(self, data):
             pc = data[0].to(self.device)
@@ -220,10 +223,10 @@ if __name__ == "__main__":
     model_params = configs["ForwardModel"]["model_params"]
     geo_encoder_filebase = configs["GeoEncoder"]["filebase"]
     geo_encoder_model_params = configs["GeoEncoder"]["model_params"]
-    print("forward model filebase:", filebase)
-    print("forward model params:", model_params)
-    print("geo encoder filebase:", geo_encoder_filebase)
-    print("geo encoder model params:", geo_encoder_model_params)
+    print(f"\n\nForwardModel Filebase: {filebase}, model_params:")
+    print(model_params)
+    print(f"\n\nGeoEncoder Filebase: {geo_encoder_filebase}, model_params:")
+    print(geo_encoder_model_params)
 
     fwd_model = ForwardModelDefinition(**model_params)
     geo_encoder, _ = LoadGeoEncoderModel(
