@@ -1,5 +1,6 @@
 **/slurm_output/
 **/saved_models/
+**/saved_weights/
 **/__pycache__/
 **/.ipynb_checkpoints/
 **/.vscode/
@@ -8,3 +9,4 @@ __pycache__/
 *.rpy.*
 *.rpy
 *.rec
+*.slurm

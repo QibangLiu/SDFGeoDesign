@@ -106,7 +106,8 @@ def get_periodic_geo(cut_polygon, x0, y0=0.0, ensure_perodic_tb=True):
         out_loop_new = np.arange(len(vertices_new))
         out_loop_new = np.append(out_loop_new, 0)
     else:
-        raise ValueError('The outer of polygon is not closed')
+        print('The outer of polygon is not closed')
+        return None
 
     inner_loops_new = []
     for interior in interiors_coords:
@@ -151,7 +152,7 @@ def SDF_from_GEO(vertices_z, inner_loops, out_loop, grid_points):
     return signed_distances
 
 
-def get_point_cloud_from_polygon(polygon):
+def get_point_cloud_from_polygon(vertices, out_loop, inner_loops):
     xmin, xmax, ymin, ymax = 0, 1, 0, 1
     x = np.linspace(xmin, xmax, 32)
     y = np.linspace(xmin, xmax, 32)
@@ -164,22 +165,17 @@ def get_point_cloud_from_polygon(polygon):
     XY = np.vstack((top_row, bottom_row, left_column, right_column))
     XY = np.hstack((XY, np.zeros((XY.shape[0], 1))))
 
-    verts = np.array(polygon.exterior.coords)  # Outer boundary
     inside_boundary_outside_interior = points_in_poly(
-        XY, verts)
-    if polygon.interiors:  # Check if there are holes
-        for interior in polygon.interiors:
-            hole_vertices = np.array(interior.coords)  # Hole vertices
-            inside_interior = points_in_poly(XY, hole_vertices)
-            inside_boundary_outside_interior = np.logical_and(
-                inside_boundary_outside_interior, ~inside_interior)
-            verts = np.vstack((verts, hole_vertices))
+        XY, vertices[out_loop])
+    for edges in inner_loops:
+        inside_interior = points_in_poly(XY, vertices[edges])
+        inside_boundary_outside_interior = np.logical_and(
+            inside_boundary_outside_interior, ~inside_interior)
     XY = XY[inside_boundary_outside_interior]
-    tree = cKDTree(verts)
-    distances, _ = tree.query(XY)
     tree = cKDTree(vertices)
+    distances, _ = tree.query(XY)
     not_close_points = XY[distances > 0.4/32]
-    points_cloud = np.concatenate([verts, not_close_points], axis=0)
+    points_cloud = np.concatenate([vertices, not_close_points], axis=0)
     return points_cloud
 
 
@@ -206,8 +202,10 @@ def shift_geo(filter_sample_id, num_shifts=4):
         cut_polygon = get_polygon(vertices, out_loop, inner_loops, x0)
         if isinstance(cut_polygon, Polygon):
             got_num += 1
-            vertices_new, out_loop_new, inner_loops_new = get_periodic_geo(
-                cut_polygon, x0)
+            geo_results = get_periodic_geo(cut_polygon, x0)
+            if geo_results is None:
+                continue
+            vertices_new, out_loop_new, inner_loops_new = geo_results
             vertices_new_list.append(vertices_new)
             inner_loops_new_list.append(inner_loops_new)
             out_loop_new_list.append(out_loop_new)
@@ -217,7 +215,8 @@ def shift_geo(filter_sample_id, num_shifts=4):
             stress_new.append(stress[idx])
             geo_ids.append(geo_id)
             filter_sample_ids.append(filter_sample_id)
-            pc = get_point_cloud_from_polygon(cut_polygon)
+            pc = get_point_cloud_from_polygon(
+                vertices_new, out_loop_new, inner_loops_new)
             pc_new.append(pc)
             x0_shift.append(x0)
         try_num += 1

@@ -1,4 +1,5 @@
 # %%
+from models_implicit import LoadData
 from torch.nn.utils.rnn import pad_sequence
 import torch.nn as nn
 from typing import List, Optional, Tuple, Union
@@ -285,9 +286,9 @@ trainer.compile(optimizer, loss_fn=nn.MSELoss(), checkpoint=checkpoint)
 # %%
 # trainer.load_weights(device=device)
 # h = trainer.load_logs()
-h = trainer.fit(train_loader, val_loader=test_loader,
-                epochs=500,  print_freq=1)
-trainer.save_logs(filebase)
+# h = trainer.fit(train_loader, val_loader=test_loader,
+#                 epochs=500,  print_freq=1)
+# trainer.save_logs(filebase)
 # %%
 trainer.load_weights(device=device)
 h = trainer.load_logs()
@@ -299,11 +300,13 @@ ax.legend()
 ax.set_yscale("log")
 # %%
 sd_pred_test, sd_ture_test = [], []
+para_test_all = []
 with torch.no_grad():
     for test_data in test_loader:
         pc_test = test_data[0].to(device)
         sdf_test = test_data[1].to(device)
         para_test = geo_encoder(pc_test)
+        para_test_all.append(para_test.cpu().numpy())
         sd_pred = trainer.models[1](
             grid_coor, para_test).cpu().detach().numpy()
         sd_true = sdf_test.view(-1, grid_coor.shape[0]).cpu().numpy()
@@ -358,6 +361,9 @@ for i, index in enumerate(min_median_max_index):
         else:
             ax.plot(contour[:, 1], contour[:, 0], '--b', linewidth=2)
 
+    pc_plot = pc_test[index].cpu().numpy()
+    pc_plot_ = (pc_plot)*119/1.2
+    ax.plot(pc_plot_[0, :], pc_plot_[1, :], "x")
     ax.legend()
     ax.set_xlabel("x")
     ax.set_ylabel("y")
@@ -378,3 +384,34 @@ ax.axis('off')
 
 plt.show()
 # %%
+# test other set
+data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset"
+data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift4_0-10000_aug.pkl"
+with open(data_file, "rb") as f:
+    data = pickle.load(f)
+sdf = data["sdf"].astype(np.float32)
+stress = data["stress"].astype(np.float32)
+point_cloud = data["points_cloud"]
+x_grids = data['x_grids'].astype(np.float32)
+y_grids = data['y_grids'].astype(np.float32)
+
+sdf = sdf.reshape(-1, 120 * 120)
+sdf_shift, sdf_scale = np.mean(sdf), np.std(sdf)
+sdf_norm = (sdf - sdf_shift) / sdf_scale
+# sdf_norm = sdf_norm.reshape(-1, 1, 120, 120)
+stress_shift, stress_scale = np.mean(stress), np.std(stress)
+stress_norm = (stress - stress_shift) / stress_scale
+
+point_cloud = [torch.tensor(x[:, :2], dtype=torch.float32)
+               for x in point_cloud]  # (Nb,N,3)->(Nb, N, 2)
+point_cloud = pad_sequence(point_cloud, batch_first=True, padding_value=0)
+point_cloud = point_cloud.permute(0, 2, 1)
+sdf_norm = torch.tensor(sdf_norm)
+stress_norm = torch.tensor(stress_norm)
+
+pc_test = point_cloud[-1000:]
+sdf_test = sdf_norm[-1000:]
+test_dataset = TensorDataset(pc_test, sdf_test)
+# grid_coor = np.vstack([x_grids.ravel(), y_grids.ravel()]).T
+# grid_coor = torch.tensor(grid_coor)
+test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False)

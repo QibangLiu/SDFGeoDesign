@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J geo_gen
-#SBATCH --output=./slurm_output/cpujobs%j.log
+#SBATCH --output=./slurm_output/augmentation_data%j.log
 #SBATCH --account=bcxr-delta-cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -26,3 +26,4 @@ which python
 #srun python -u ../gather_sdf_strainstress.py
 
 srun python -u augmentation_data.py
+#srun python -u gather_augmentaition_shift4_ID0-10000.py

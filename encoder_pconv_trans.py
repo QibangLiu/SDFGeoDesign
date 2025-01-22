@@ -20,7 +20,7 @@ import timeit
 import os
 import pickle
 from sklearn.model_selection import train_test_split
-import torch_utils.torch_trainer as torch_trainer
+import trainer.torch_trainer as torch_trainer
 from skimage import measure
 import math
 from typing import Optional
