@@ -16,6 +16,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %%
 
+
 class ForwardModel(nn.Module):
     def __init__(
         self,
@@ -29,6 +30,7 @@ class ForwardModel(nn.Module):
         norm_groups=8,
     ):
         super().__init__()
+        self.geo_encoder = geo_encoder
         self.unet = UNet(
             img_shape,
             first_conv_channels,
@@ -53,7 +55,9 @@ class ForwardModel(nn.Module):
         # self.mlp.append(nn.ReLU())
 
     def forward(self, x):
-        x = self.unet(x)
+        latent = self.geo_encoder(x)
+        latent = latent[:, None, :, :]
+        x = self.unet(latent)
         x = self.cov(x)
         x = x.view(x.size(0), -1)
         for layer in self.mlp:
@@ -65,12 +69,13 @@ class ForwardModel(nn.Module):
         pass
 
 
-def ForwardModelDefinition(img_shape=(1, 128, 128),
+def ForwardModelDefinition(geo_encoder, img_shape=(1, 128, 128),
                            channel_mutipliers=[1, 2, 4, 8],
                            has_attention=[False, False, True, True],
                            first_conv_channels=8, num_res_blocks=1):
     num_out = 51
     fwd_model = ForwardModel(
+        geo_encoder,
         img_shape,
         first_conv_channels,
         channel_mutipliers,
@@ -99,30 +104,21 @@ def LoadForwardModel(filebase, model_params):
     return fwd_model
 
 
-def TrainForwardModel(fwd_model, geo_encoder, filebase, train_flag, epochs=300, lr=1e-3):
+def TrainForwardModel(fwd_model, filebase, train_flag, epochs=300, lr=1e-3):
 
     train_dataset, test_dataset, _, _, stress_inv_scaler = LoadData(
         seed=42)
     train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False)
 
-    geo_encoder = geo_encoder.to(device)
-
     class TRAINER(torch_trainer.TorchTrainer):
-        def __init__(self, models, device, filebase, geo_encoder):
+        def __init__(self, models, device, filebase):
             super().__init__(models, device, filebase)
-            self.geo_encoder = geo_encoder
-            for param in geo_encoder.parameters():
-                param.requires_grad = False
-            self.geo_encoder.eval()
 
         def evaluate_losses(self, data):
             pc = data[0].to(self.device)
             y_true = data[2].to(self.device)
-            latent = self.geo_encoder(pc)
-            latent = latent[:, None, :, :]
-            y_pred = self.models[0](latent)
-
+            y_pred = self.models[0](pc)
             loss = nn.MSELoss()(y_true, y_pred)
             loss_dic = {"loss": loss.item()}
             return loss, loss_dic
@@ -133,10 +129,8 @@ def TrainForwardModel(fwd_model, geo_encoder, filebase, train_flag, epochs=300, 
             self.models[0].eval()
             with torch.no_grad():
                 for data in data_loader:
-                    inputs = data[0].to(self.device)  # pc,sdf,stress
-                    latent = self.geo_encoder(inputs)
-                    latent = latent[:, None, :, :]
-                    pred = self.models[0](latent)
+                    inputs = data[0].to(self.device)
+                    pred = self.models[0](inputs)
                     pred = pred.cpu().detach().numpy()
                     y_pred.append(pred)
                     y_true.append(data[2].cpu().detach().numpy())
@@ -145,7 +139,7 @@ def TrainForwardModel(fwd_model, geo_encoder, filebase, train_flag, epochs=300, 
             return y_pred, y_true
 
     trainer = TRAINER(
-        fwd_model, device, filebase, geo_encoder)
+        fwd_model, device, filebase)
     optimizer = torch.optim.Adam(trainer.parameters(), lr=lr)
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="val_loss", save_best_only=True)
@@ -216,12 +210,10 @@ if __name__ == "__main__":
         "--train_flag", type=str, default="None")
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--out_c", type=int, default=256)
-    parser.add_argument("--latent_d", type=int, default=256)
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
-    configs = models_configs(out_c=args.out_c, latent_d=args.latent_d)
+    configs = models_configs(forward_from_pc=True)
 
     filebase = configs["ForwardModel"]["filebase"]
     model_params = configs["ForwardModel"]["model_params"]
@@ -232,9 +224,10 @@ if __name__ == "__main__":
     print(f"\n\nGeoEncoder Filebase: {geo_encoder_filebase}, model_params:")
     print(geo_encoder_model_params)
 
-    fwd_model = ForwardModelDefinition(**model_params)
     geo_encoder, _ = LoadGeoEncoderModel(
         geo_encoder_filebase, geo_encoder_model_params)
-    trainer = TrainForwardModel(fwd_model, geo_encoder, filebase, args.train_flag,
+    fwd_model = ForwardModelDefinition(geo_encoder, **model_params)
+
+    trainer = TrainForwardModel(fwd_model, filebase, args.train_flag,
                                 epochs=args.epochs, lr=args.learning_rate)
     print(filebase, " training finished")

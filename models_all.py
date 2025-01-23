@@ -10,7 +10,7 @@ import timeit
 import os
 import pickle
 from sklearn.model_selection import train_test_split
-import torch_trainer
+import models.trainer.torch_trainer as torch_trainer
 from skimage import measure
 import nn_modules
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -92,14 +92,22 @@ def ForwardModelDefinition():
 
 data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/sdf_stress_strain_data_12-92_shift4_0-10000_aug.npz"
 
+data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset"
+data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift4_0-10000_aug.pkl"
+
 
 def LoadData(data_file=data_file, test_size=0.2, seed=42):
-    data = np.load(data_file)
+    # data = np.load(data_file)
+    # sdf = data["sdf"].astype(np.float32)
+    # stress = data["stress"].astype(np.float32)
+    # strain = data["strain"].astype(np.float32)
+
+    with open(data_file, "rb") as f:
+        data = pickle.load(f)
     sdf = data["sdf"].astype(np.float32)
     stress = data["stress"].astype(np.float32)
     strain = data["strain"].astype(np.float32)
     sdf = sdf.reshape(-1, 120 * 120)
-
     # sdf_scaler = MinMaxScaler((-1, 1))
     # sdf_scaler = StandardScaler()
     # sdf_norm = sdf_scaler.fit_transform(sdf)
@@ -139,7 +147,7 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42):
 
 
 # %%
-fwd_filebase = "/work/hdd/bdsy/qibang/repository_Wbdsy/GeoSDF2D/saved_models/fwd_sig12-92_aug10000_SressSignleGaussianNorm_SDFSignleGaussianNorm"
+fwd_filebase = "/work/hdd/bdsy/qibang/repository_Wbdsy/GeoSDF2D/saved_models/fwd_new_data"
 fwd_model_path = f"{fwd_filebase}/model.ckpt"
 
 
@@ -159,12 +167,10 @@ def TrainForwardModel(fwd_model, filebase, train_flag, train_loader, test_loader
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="val_loss", save_best_only=True
     )
-    lr_scheduler = {
-        "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau,
-        "params": {"factor": 0.7, "patience": 40},
-        "metric_name": "val_loss",
-    }
+
     optimizer = torch.optim.Adam(trainer.parameters(), lr=lr)
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, factor=0.7, patience=40)
     trainer.compile(optimizer=optimizer, lr_scheduler=lr_scheduler,
                     loss_fn=nn.MSELoss(), checkpoint=checkpoint)
     if train_flag == "continue":
@@ -172,7 +178,7 @@ def TrainForwardModel(fwd_model, filebase, train_flag, train_loader, test_loader
         h = trainer.load_logs()
 
     h = trainer.fit(train_loader, val_loader=test_loader,
-                    epochs=epochs, callbacks=checkpoint, print_freq=1)
+                    epochs=epochs,  print_freq=1)
 
     trainer.load_weights(device=device)
     trainer.save_logs()
@@ -619,13 +625,12 @@ def EvaluateUcVAEInverseModel(fwd_model, decoder, Ytarget, sdf_inv_scaler, stres
                 ax.axis("equal")  # Keep aspect ratio square
 
 
-
 # %%
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Model training arguments")
     parser.add_argument(
-        "--model", type=str, default="ucvae")
+        "--model", type=str, default="forward")
     parser.add_argument(
         "--train_flag", type=str, default="start")
     parser.add_argument("--epochs", type=int, default=300)

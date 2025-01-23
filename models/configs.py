@@ -62,14 +62,14 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42):
 # %%
 
 
-def models_configs(*args, **kwargs):
+def models_configs(out_c=128, latent_d=128, *args, **kwargs):
     data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset"
     data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift4_0-10000_aug.pkl"
     data_params = {"data_file": data_file,
                    "test_size": 0.2, "seed": 42}
-    # GeoEncoder parameters
-    out_c = 128
-    latent_d = 128
+    """************GeoEncoder parameters************"""
+
+
     geo_encoder_file_base = f"{script_path}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}"
     geo_encoder_model_params = {
         "out_c": out_c,
@@ -88,21 +88,27 @@ def models_configs(*args, **kwargs):
         "filebase": geo_encoder_file_base,
         # "data_params": data_params
     }
-
+    """************Forward model parameters************"""
     img_shape = (1, out_c, latent_d)
     channel_mutipliers = [1, 2, 4, 8]
-    has_attention = [False, False, True, True]
+    has_attention = [False, False, False, False]
     first_conv_channels = 8
     num_res_blocks = 1
     # Forward model parameters
+
+    if "forward_from_pc" in kwargs and kwargs["forward_from_pc"] == True:
+        fwd_filebase = f"{script_path}/saved_weights/fwd_fromPC_outc{out_c}_latentdim{latent_d}_noatt"
+    else:
+        fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_noatt"
+
     fwd_model_params = {"img_shape": img_shape,
                         "channel_mutipliers": channel_mutipliers,
                         "has_attention": has_attention,
                         "first_conv_channels": first_conv_channels,
                         "num_res_blocks": num_res_blocks}
-    fwd_filebase = f"{script_path}/saved_weights/fwdmodel_outc{out_c}_latentdim{latent_d}"
     fwd_params = {"model_params": fwd_model_params, "filebase": fwd_filebase}
 
+    """************Inverse diffusion model parameters************"""
     channel_multpliers = [1, 2, 4, 8]
     has_attention = [False, False, True, True]
     fist_conv_channels = 32
