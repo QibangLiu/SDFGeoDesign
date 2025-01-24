@@ -44,6 +44,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
                  num_heads: int = 4,
                  cross_attn_layers: int = 1,
                  self_attn_layers: int = 3,
+                 pc_padding_val: Optional[int] = None,
                  *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         """
@@ -59,12 +60,14 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
             d_hidden (list): hidden dimensions for the conv in the point set embedding
             fps_method (str): method for point sampling in the point set embedding, 'fps' or 'first', 'fps' has issue
             out_c (int): output channels
+            pc_padding_val (int): padding value for the sequence points
             final out shape: [B, out_c*latent_d]
         """
         self.width = width
         self.latent_d = latent_d
         self.n_point = n_point
         self.out_c = out_c
+        self.pc_padding_val = pc_padding_val
         # position embeding + linear layer
         self.pos_emb_linear = PosEmbLinear("nerf", input_channels, self.width)
 
@@ -91,7 +94,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.output_proj = nn.Linear(
             self.width, self.out_c)
 
-    def forward(self, points):
+    def forward(self, points, apply_padding_pointnet2=False):
         """
         Args:
             points (torch.Tensor): [B, N, C]
@@ -99,6 +102,16 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         Returns:
             torch.Tensor: [B, out_c*latent_d]
         """
+        if apply_padding_pointnet2:
+            pc_padding_val_pointnet2 = self.pc_padding_val
+        else:
+            pc_padding_val_pointnet2 = None
+
+        if self.pc_padding_val is not None:
+            pading_mask = points[:, :, 0] == self.pc_padding_val  # [B, N]
+            pading_mask = pading_mask.to(points.device)
+        else:
+            pading_mask = None
         # B,N,C1]-> [B,C1,N]
         xyz = points.permute(0, 2, 1)
         # [B, N, C1] -> [B, N, C2], C2=self.width
@@ -106,10 +119,12 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         # [B, N, C2] -> [B, C2, N]
         points = dataset_emb.permute(0, 2, 1)
         # [B, C2, N] -------------> [B, C3, No], No=n_point
-        #      \ pointNet             / mean (dim=2)
-        #       \ permute            / Conv, C3=d_hidden[-1]
+        #      \ pointNet             /\ mean (dim=2)
+        #      _\/ permute           / Conv, C3=d_hidden[-1]
         #       [B, C2+ndim,  n_sample, n_point]
-        data_tokens = self.point_set_embedding(xyz, points)
+        # TODO: add padding value
+        data_tokens = self.point_set_embedding(
+            xyz, points, pc_padding_val_pointnet2)
         # [B, Co, No] -> [B, No, Co]
         data_tokens = data_tokens.permute(0, 2, 1)
         batch_size = points.shape[0]
@@ -120,7 +135,9 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         assert h.shape == (batch_size, self.n_point +
                            self.latent_d, self.width)
         # [B, n_point+latent_d, width] -> [B,  n_point+latent_d, width]
-        h = self.encoder(h, dataset_emb)
+        # cross_attn. TODO: add mask here, dataset_emb has padding points
+        h = self.encoder(h, dataset_emb, key_padding_mask=pading_mask)
+        # self_attn TODO: No need mask here, because no pading point
         h = self.processor(h)
         # [B,  n_point+latent_d, width] -> [B, latent_d, width]
         # -> [B, latent_d, out_c]
@@ -165,22 +182,26 @@ class implicit_sdf(nn.Module):
     def forward(self, x, latent):
         """
         Args:
-            x (torch.Tensor): [N, C], query points
+            x (torch.Tensor): [N, 2], query points,
             latent (torch.Tensor): [B, latent_d, C], latent vectors
         """
-        x = x[None].repeat(latent.shape[0], 1, 1)
+        # (N,2)--> (N,62)
         x = encode_position('nerf', position=x)
+        # (1,N,62)->(B,N,62)
+        x = x[None].repeat(latent.shape[0], 1, 1)
         # latent = latent.view(latent.shape[0], self.d_latent, -1)
         proj_params = self.params_proj(latent)
         for i, kw in enumerate(proj_params.keys()):
             w = proj_params[kw]
             b = getattr(self, self.params_pre_name+str(i)+'_bias')
+            # (B,P,I)-> (B,P,O)
             x = torch.einsum("bpi,boi->bpo", x, w)
             x = torch.add(x, b)
             x = F.silu(x)
 
         for layer in self.nn_layers:
             x = layer(x)
+        # (B,N,1)->(B,N)
         return x.squeeze()
 
 
@@ -189,14 +210,15 @@ def GeoEncoderModelDefinition(out_c=128, latent_d=128,
                               n_sample=8, radius=0.2,
                               d_hidden=[128, 128],
                               num_heads=4, cross_attn_layers=1,
-                              self_attn_layers=3):
+                              self_attn_layers=3,
+                              pc_padding_val: Optional[int] = None):
 
     geo_encoder = PointCloudPerceiverChannelsEncoder(
         input_channels=2, out_c=out_c, width=width,
         latent_d=latent_d, n_point=n_point, n_sample=n_sample,
         radius=radius, d_hidden=d_hidden,
         num_heads=num_heads, cross_attn_layers=cross_attn_layers,
-        self_attn_layers=self_attn_layers)
+        self_attn_layers=self_attn_layers, pc_padding_val=pc_padding_val)
     sdf_NN = implicit_sdf(latent_d=latent_d)
     print("Total number of parameters of Geo encoder: ", sum(p.numel()
                                                          for p in geo_encoder.parameters()))
@@ -239,7 +261,7 @@ def TrainGeoEncoderModel(geo_encoder, sdf_NN, filebase, train_flag, epochs=300, 
 
         def evaluate_losses(self, data):
             pc = data[0].to(self.device)
-            SDF = data[1].to(self.device)
+            SDF = data[2].to(self.device)
             params = self.models[0](pc)
             sdf_pred = self.models[1](grid_coor, params)
             loss = nn.MSELoss()(sdf_pred, SDF)
@@ -254,7 +276,7 @@ def TrainGeoEncoderModel(geo_encoder, sdf_NN, filebase, train_flag, epochs=300, 
             with torch.no_grad():
                 for data in data:
                     pc = data[0].to(self.device)
-                    SDF = data[1].to(self.device)
+                    SDF = data[2].to(self.device)
                     params = self.models[0](pc)
                     sdf_pred = self.models[1](grid_coor, params)
                     sd_pred.append(sdf_pred.cpu().detach().numpy())
@@ -319,7 +341,33 @@ if __name__ == "__main__":
     model_params = configs["GeoEncoder"]["model_params"]
     print(f"\n\nGeoEncoder Filebase: {filebase}, model_params:")
     print(model_params)
-    geo_encoder, sdf_NN = GeoEncoderModelDefinition(**model_params)  # TODO
-    trainer = TrainGeoEncoderModel(geo_encoder, sdf_NN, filebase, args.train_flag,
-                                   epochs=args.epochs, lr=args.learning_rate)
+    geo_encoder, sdf_NN = GeoEncoderModelDefinition(**model_params)
+    # trainer = TrainGeoEncoderModel(geo_encoder, sdf_NN, filebase, args.train_flag,
+    #                                epochs=args.epochs, lr=args.learning_rate)
     print(filebase, " training finished")
+# %%
+# geo_encoder.eval()
+# pc = torch.randn(2, 300, 2)
+# padv = -10
+# pc[0, 180:, :] = padv
+# pc[1, 220:, :] = padv
+# geo_encoder.pc_padding_val = padv
+# params = geo_encoder(pc)
+# params = params.detach().cpu().numpy()
+# # %%
+# # padv = -200
+
+# # pc[0, 180:, :] = padv
+# # geo_encoder.pc_padding_val = padv
+# pc_new = pc  # [:, :180, :]
+# pc_new = pc_new[:, torch.randperm(pc_new.size(1)), :]
+# params_pad = geo_encoder(pc_new, apply_padding_pointnet2=False)
+
+# params_pad = params_pad.detach().cpu().numpy()
+# for i in range(len(params)):
+#     L2 = np.linalg.norm(params[i] - params_pad[i])/np.linalg.norm(params[i])
+
+#     print("L2 norm of params with and without padding", L2)
+
+
+# %%

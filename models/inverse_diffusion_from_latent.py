@@ -1,7 +1,7 @@
 # %%
 from torch.utils.data import DataLoader
 from geoencoder import LoadGeoEncoderModel
-from forward import LoadForwardModel
+from forward_from_latent import LoadForwardModel
 from configs import models_configs, LoadData
 import argparse
 import os
@@ -63,7 +63,7 @@ def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion, geo_encoder,
         def evaluate_losses(self, data):
             '''custom loss'''
             pc = data[0].to(self.device)
-            labels = data[2].to(self.device)
+            labels = data[1].to(self.device)
             latent = self.geo_encoder(pc)  # (Nb,lat_dim,out_c)
             latent = latent.unsqueeze(1)  # (Nb,1,lat_dim,out_c)
             batch_size = latent.shape[0]
@@ -95,14 +95,14 @@ def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion, geo_encoder,
         checkpoint=checkpoint,
         scheduler_metric_name="loss",
     )
-
-    if train_flag == "continue":
+    if not train_flag == "start":
         trainer.load_weights(device=device)
         h = trainer.load_logs()
 
-    h = trainer.fit(
-        train_loader, val_loader=None, epochs=epochs, print_freq=1
-    )
+    if train_flag == "continue" or train_flag == "start":
+        h = trainer.fit(
+            train_loader, val_loader=None, epochs=epochs, print_freq=1
+        )
     trainer.save_logs()
     trainer.load_weights(device=device)
 
@@ -190,13 +190,13 @@ def EvaluateDiffusionInverseModel(fwd_model, inv_Unet, gaussian_diffusion, sdf_N
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--train_flag", type=str, default="start")
-    parser.add_argument("--epochs", type=int, default=300)
+        "--train_flag", type=str, default="None")
+    parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
-    configs = models_configs()
+    configs = models_configs(forward_from_latent=True)
     filebase = configs["InvDiffusion"]["filebase"]
     model_params = configs["InvDiffusion"]["model_params"]
     geo_encoder_filebase = configs["GeoEncoder"]["filebase"]
@@ -212,6 +212,7 @@ if __name__ == "__main__":
 
     train_dataset, test_dataset, grid_coor, sdf_inv_scaler, stress_inv_scaler = LoadData(
         seed=42)
+    grid_coor = grid_coor.to(device)
     train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False)
 
@@ -225,7 +226,9 @@ if __name__ == "__main__":
                                          train_loader, test_loader, epochs=args.epochs, lr=args.learning_rate)
 
     id = 23
-    Ytarget = test_dataset[id][2].unsqueeze(0)
+    Ytarget = test_dataset[id][1].unsqueeze(0)
     EvaluateDiffusionInverseModel(fwd_model, inv_Unet, gaussian_diffusion, sdf_NN, grid_coor,
                                   Ytarget, sdf_inv_scaler, stress_inv_scaler,
-                                  num_sol=1000, plot_flag=False)
+                                  num_sol=100, plot_flag=False)
+
+# %%

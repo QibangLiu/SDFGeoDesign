@@ -17,6 +17,8 @@ data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DRe
 data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift4_0-10000_aug.pkl"
 
 
+POINTS_CLOUD_PADDING_VALUE = -10
+
 def LoadData(data_file=data_file, test_size=0.2, seed=42):
     with open(data_file, "rb") as f:
         data = pickle.load(f)
@@ -35,15 +37,16 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42):
 
     point_cloud = [torch.tensor(x[:, :2], dtype=torch.float32)
                    for x in point_cloud]  # (Nb,N,3)->(Nb, N, 2)
-    point_cloud = pad_sequence(point_cloud, batch_first=True, padding_value=0)
+    point_cloud = pad_sequence(
+        point_cloud, batch_first=True, padding_value=POINTS_CLOUD_PADDING_VALUE)
     sdf_norm = torch.tensor(sdf_norm)
     stress_norm = torch.tensor(stress_norm)
     sdf_train, sdf_test, stress_train, stress_test, pc_train, pc_test = train_test_split(
         sdf_norm, stress_norm, point_cloud, test_size=test_size, random_state=seed
     )
     train_dataset = TensorDataset(
-        pc_train, sdf_train, stress_train)
-    test_dataset = TensorDataset(pc_test, sdf_test, stress_test)
+        pc_train, stress_train, sdf_train)
+    test_dataset = TensorDataset(pc_test, stress_test, sdf_test)
     grid_coor = np.vstack([x_grids.ravel(), y_grids.ravel()]).T
     grid_coor = torch.tensor(grid_coor)
 
@@ -82,6 +85,7 @@ def models_configs(out_c=128, latent_d=128, *args, **kwargs):
         "num_heads": 4,
         "cross_attn_layers": 1,
         "self_attn_layers": 3,
+        "pc_padding_val": POINTS_CLOUD_PADDING_VALUE
     }
     geo_encoder_params = {
         "model_params": geo_encoder_model_params,
@@ -98,22 +102,28 @@ def models_configs(out_c=128, latent_d=128, *args, **kwargs):
 
     if "forward_from_pc" in kwargs and kwargs["forward_from_pc"] == True:
         fwd_filebase = f"{script_path}/saved_weights/fwd_fromPC_outc{out_c}_latentdim{latent_d}_noatt"
+        fwd_img_shape = img_shape
+    elif "forward_from_latent" in kwargs and kwargs["forward_from_latent"] == True:
+        fwd_filebase = f"{script_path}/saved_weights/fwd_fromLatent_outc{out_c}_latentdim{latent_d}_noatt"
+        fwd_img_shape = img_shape
     else:
         fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_noatt"
+        fwd_img_shape = (1, 120, 120)
 
-    fwd_model_params = {"img_shape": img_shape,
+    fwd_model_params = {"img_shape": fwd_img_shape,
                         "channel_mutipliers": channel_mutipliers,
                         "has_attention": has_attention,
                         "first_conv_channels": first_conv_channels,
-                        "num_res_blocks": num_res_blocks}
+                        "num_res_blocks": num_res_blocks,
+                        "norm_groups": 8}
     fwd_params = {"model_params": fwd_model_params, "filebase": fwd_filebase}
 
     """************Inverse diffusion model parameters************"""
     channel_multpliers = [1, 2, 4, 8]
     has_attention = [False, False, True, True]
-    fist_conv_channels = 32
+    fist_conv_channels = 16
     num_heads = 4
-    norm_groups = 16
+    norm_groups = 8
     num_res_blocks = 1
     total_timesteps = 500
     inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_outc{out_c}_latentdim{latent_d}"

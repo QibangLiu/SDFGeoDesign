@@ -117,7 +117,7 @@ def TrainForwardModel(fwd_model, filebase, train_flag, epochs=300, lr=1e-3):
 
         def evaluate_losses(self, data):
             pc = data[0].to(self.device)
-            y_true = data[2].to(self.device)
+            y_true = data[1].to(self.device)
             y_pred = self.models[0](pc)
             loss = nn.MSELoss()(y_true, y_pred)
             loss_dic = {"loss": loss.item()}
@@ -133,7 +133,7 @@ def TrainForwardModel(fwd_model, filebase, train_flag, epochs=300, lr=1e-3):
                     pred = self.models[0](inputs)
                     pred = pred.cpu().detach().numpy()
                     y_pred.append(pred)
-                    y_true.append(data[2].cpu().detach().numpy())
+                    y_true.append(data[1].cpu().detach().numpy())
             y_true = np.vstack(y_true)
             y_pred = np.vstack(y_pred)
             return y_pred, y_true

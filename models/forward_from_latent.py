@@ -20,8 +20,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class ForwardModel(nn.Module):
     def __init__(
         self,
-        geo_encoder,
-        sdf_NN,
         img_shape,
         first_conv_channels,
         channel_mutipliers,
@@ -31,15 +29,6 @@ class ForwardModel(nn.Module):
         norm_groups=8,
     ):
         super().__init__()
-        self.geo_encoder = geo_encoder
-        self.sdf_NN = sdf_NN
-        for param in geo_encoder.parameters():
-            param.requires_grad = False
-        self.geo_encoder.eval()
-        for param in sdf_NN.parameters():
-            param.requires_grad = False
-        self.sdf_NN.eval()
-
         self.unet = UNet(
             img_shape,
             first_conv_channels,
@@ -63,49 +52,32 @@ class ForwardModel(nn.Module):
         self.mlp.append(nn.Linear(in_sz, num_out))
         # self.mlp.append(nn.ReLU())
 
-    def forward_from_sdf(self, normalized_sdf):
-        x = self.unet(normalized_sdf)
+    def forward(self, x):
+        x = self.unet(x)
         x = self.cov(x)
         x = x.view(x.size(0), -1)
         for layer in self.mlp:
             x = layer(x)
         return x
 
-    def forward(self, pc, grid_points):
-        """
-        Args:
-            pc: point cloud (B,N,2)
-            grid_points: grid points (Nx*Ny,2) Nx=Ny=120
-        """
-        # (B, N, 2)->(B,latent_dim,out_c)
-        latent = self.geo_encoder(pc)
-        normalized_sdf = self.sdf_NN(grid_points, latent)  # (B, N)
-        normalized_sdf = normalized_sdf.view(-1, 1, 120, 120)
-        x = self.forward_from_sdf(normalized_sdf)
-        #  (B, 51)
-        return x
-
-
     def predict(self, data, geo_encoder):
         # TODO: add predict function
         pass
 
 
-def ForwardModelDefinition(geo_encoder, sdf_NN, img_shape=(1, 120, 120),
+def ForwardModelDefinition(img_shape=(1, 128, 128),
                            channel_mutipliers=[1, 2, 4, 8],
                            has_attention=[False, False, True, True],
-                           first_conv_channels=8, num_res_blocks=1, norm_groups=8):
+                           first_conv_channels=8, num_res_blocks=1):
     num_out = 51
     fwd_model = ForwardModel(
-        geo_encoder,
-        sdf_NN,
         img_shape,
         first_conv_channels,
         channel_mutipliers,
         has_attention,
         num_out=num_out,
         num_res_blocks=num_res_blocks,
-        norm_groups=norm_groups,
+        norm_groups=None,
     )
     trainable_params = sum(p.numel()
                            for p in fwd_model.parameters() if p.requires_grad)
@@ -117,10 +89,9 @@ def ForwardModelDefinition(geo_encoder, sdf_NN, img_shape=(1, 120, 120),
 # %%
 
 
-def LoadForwardModel(filebase, fwd_model_params, geo_encoder_model_params):
+def LoadForwardModel(filebase, model_params):
     model_path = os.path.join(filebase, "model.ckpt")
-    geo_encoder, sdf_NN = LoadGeoEncoderModel(**geo_encoder_model_params)
-    fwd_model = ForwardModelDefinition(geo_encoder, sdf_NN, **fwd_model_params)
+    fwd_model = ForwardModelDefinition(**model_params)
     state_dict = torch.load(model_path, map_location=device, weights_only=True)
     fwd_model.load_state_dict(state_dict)
     fwd_model.to(device)
@@ -128,34 +99,44 @@ def LoadForwardModel(filebase, fwd_model_params, geo_encoder_model_params):
     return fwd_model
 
 
-def TrainForwardModel(fwd_model, filebase, train_flag, epochs=300, lr=1e-3):
+def TrainForwardModel(fwd_model, geo_encoder, filebase, train_flag, epochs=300, lr=1e-3):
 
-    train_dataset, test_dataset, grid_coors, _, stress_inv_scaler = LoadData(
+    train_dataset, test_dataset, _, _, stress_inv_scaler = LoadData(
         seed=42)
     train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False)
-    grid_coors = grid_coors.to(device)
+
+    geo_encoder = geo_encoder.to(device)
 
     class TRAINER(torch_trainer.TorchTrainer):
-        def __init__(self, models, device, filebase):
+        def __init__(self, models, device, filebase, geo_encoder):
             super().__init__(models, device, filebase)
+            self.geo_encoder = geo_encoder
+            for param in geo_encoder.parameters():
+                param.requires_grad = False
+            self.geo_encoder.eval()
 
         def evaluate_losses(self, data):
             pc = data[0].to(self.device)
             y_true = data[1].to(self.device)
-            y_pred = self.models[0](pc, grid_coors)
+            latent = self.geo_encoder(pc)
+            latent = latent[:, None, :, :]
+            y_pred = self.models[0](latent)
+
             loss = nn.MSELoss()(y_true, y_pred)
             loss_dic = {"loss": loss.item()}
             return loss, loss_dic
 
-        def predict(self, data_loader, grid_coors):
+        def predict(self, data_loader):
             y_pred = []
             y_true = []
             self.models[0].eval()
             with torch.no_grad():
                 for data in data_loader:
-                    pc = data[0].to(self.device)
-                    pred = self.models[0](pc, grid_coors)
+                    inputs = data[0].to(self.device)  # pc,sdf,stress
+                    latent = self.geo_encoder(inputs)
+                    latent = latent[:, None, :, :]
+                    pred = self.models[0](latent)
                     pred = pred.cpu().detach().numpy()
                     y_pred.append(pred)
                     y_true.append(data[1].cpu().detach().numpy())
@@ -164,7 +145,7 @@ def TrainForwardModel(fwd_model, filebase, train_flag, epochs=300, lr=1e-3):
             return y_pred, y_true
 
     trainer = TRAINER(
-        fwd_model, device, filebase)
+        fwd_model, device, filebase, geo_encoder)
     optimizer = torch.optim.Adam(trainer.parameters(), lr=lr)
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="val_loss", save_best_only=True)
@@ -172,7 +153,6 @@ def TrainForwardModel(fwd_model, filebase, train_flag, epochs=300, lr=1e-3):
         optimizer, factor=0.7, patience=40)
     trainer.compile(
         optimizer=optimizer,
-        loss_fn=nn.MSELoss(),
         lr_scheduler=lr_scheduler,
         checkpoint=checkpoint,
         scheduler_metric_name="val_loss",
@@ -185,13 +165,13 @@ def TrainForwardModel(fwd_model, filebase, train_flag, epochs=300, lr=1e-3):
                     epochs=epochs, print_freq=1)
     trainer.save_logs()
 
-    EvaluateForwardModel(trainer, test_loader, grid_coors, stress_inv_scaler)
+    EvaluateForwardModel(trainer, test_loader, stress_inv_scaler)
     return trainer
 
 
-def EvaluateForwardModel(trainer, test_loader, grid_coors, stress_inv_scal, plot_flag=False):
+def EvaluateForwardModel(trainer, test_loader, stress_inv_scal, plot_flag=False):
     trainer.load_weights(device=device)
-    s_pred, s_true = trainer.predict(test_loader, grid_coors)
+    s_pred, s_true = trainer.predict(test_loader)
     s_pred = stress_inv_scal(s_pred)
     s_true = stress_inv_scal(s_true)
     error_s = np.linalg.norm(s_pred-s_true, axis=1) / \
@@ -233,13 +213,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Model training arguments")
     parser.add_argument(
-        "--train_flag", type=str, default="start")
+        "--train_flag", type=str, default="None")
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--out_c", type=int, default=256)
+    parser.add_argument("--latent_d", type=int, default=256)
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
-    configs = models_configs(out_c=128, latent_d=128)
+    configs = models_configs(out_c=args.out_c, latent_d=args.latent_d)
 
     filebase = configs["ForwardModel"]["filebase"]
     model_params = configs["ForwardModel"]["model_params"]
@@ -250,12 +232,9 @@ if __name__ == "__main__":
     print(f"\n\nGeoEncoder Filebase: {geo_encoder_filebase}, model_params:")
     print(geo_encoder_model_params)
 
-    geo_encoder, sdf_NN = LoadGeoEncoderModel(
+    fwd_model = ForwardModelDefinition(**model_params)
+    geo_encoder, _ = LoadGeoEncoderModel(
         geo_encoder_filebase, geo_encoder_model_params)
-    fwd_model = ForwardModelDefinition(geo_encoder, sdf_NN, **model_params)
-
-    trainer = TrainForwardModel(fwd_model, filebase, args.train_flag,
+    trainer = TrainForwardModel(fwd_model, geo_encoder, filebase, args.train_flag,
                                 epochs=args.epochs, lr=args.learning_rate)
     print(filebase, " training finished")
-
-# %%
