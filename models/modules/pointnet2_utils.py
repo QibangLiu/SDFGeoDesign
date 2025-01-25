@@ -1,4 +1,9 @@
 """
+Author: Qibang Liu <qibang@illinois.edu>
+National Center for Supercomputing Applications,
+University of Illinois at Urbana-Champaign
+Created: 2025-01-15
+
 Modified base on https://github.com/openai/shap-e/blob/main/shap_e/models/nn/pointnet2_utils.py
 Originaly based on https://github.com/yanx27/Pointnet_Pointnet2_pytorch/blob/master/models/pointnet2_utils.py
 MIT License
@@ -10,7 +15,6 @@ from time import time
 
 import numpy as np
 import torch
-import warnings
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -92,16 +96,17 @@ def farthest_point_sample(xyz, npoint, pc_padding_value: Optional[int] = None, d
     if pc_padding_value is not None:
         # QB if padding_value and the points is shuffled
         pad_mask = xyz[:, :, 0] == pc_padding_value  # [B, N]
-        distance[pad_mask] = 0
+        distance[pad_mask] = 0  # avoid sampling the padding points
         non_pad_idx = torch.arange(N).repeat(B, 1).to(device)
         non_pad_idx = torch.where(~pad_mask, non_pad_idx, float('inf'))
         non_pad_idx, _ = torch.sort(non_pad_idx, dim=1)
         non_pad_idx = non_pad_idx[:, :npoint].long().to(device)
+        """avoid sampling the padding points"""
         if deterministic:
             farthest = non_pad_idx[:, 0]
         else:
             ids = torch.randint(0, npoint, (B,), dtype=torch.long)
-            farthest = non_pad_idx[:, ids]
+            farthest = non_pad_idx[torch.arange(B), ids]
     else:
         if deterministic:
             farthest = torch.arange(0, B, dtype=torch.long).to(device)
@@ -177,10 +182,6 @@ def sample_and_group(
     B, N, C = xyz.shape
     S = npoint
     if fps_method == "fps":
-        # can not be fps method for this
-        warnings.warn(
-            "Using 'fps' method for sampling may have issue for this application.",
-            UserWarning)
         fps_idx = farthest_point_sample(
             xyz, npoint, pc_padding_value, deterministic=deterministic)  # [B, npoint, C]
     elif fps_method == "first":

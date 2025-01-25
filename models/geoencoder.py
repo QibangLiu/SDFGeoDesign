@@ -58,7 +58,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
             patch_size//2 (int): padding size of dim 1 of conv in the point set embedding
             padding_mode (str): padding mode of the conv in the point set embedding
             d_hidden (list): hidden dimensions for the conv in the point set embedding
-            fps_method (str): method for point sampling in the point set embedding, 'fps' or 'first', 'fps' has issue
+            fps_method (str): method for point sampling in the point set embedding, 'fps' or 'first'
             out_c (int): output channels
             pc_padding_val (int): padding value for the sequence points
             final out shape: [B, out_c*latent_d]
@@ -68,6 +68,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.n_point = n_point
         self.out_c = out_c
         self.pc_padding_val = pc_padding_val
+        self.fps_method = fps_method
         # position embeding + linear layer
         self.pos_emb_linear = PosEmbLinear("nerf", input_channels, self.width)
 
@@ -102,7 +103,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         Returns:
             torch.Tensor: [B, out_c*latent_d]
         """
-        if apply_padding_pointnet2:
+        if apply_padding_pointnet2 or self.fps_method == "fps":
             pc_padding_val_pointnet2 = self.pc_padding_val
         else:
             pc_padding_val_pointnet2 = None
@@ -336,11 +337,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--train_flag", type=str, default="start", help="start or continue, or any other string")
-    parser.add_argument("--epochs", type=int, default=300)
+    parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     args, unknown = parser.parse_known_args()
     print(vars(args))
-    configs = models_configs(out_c=256, latent_d=256)
+    configs = models_configs()
     filebase = configs["GeoEncoder"]["filebase"]
     model_args = configs["GeoEncoder"]["model_args"]
     print(f"\n\nGeoEncoder Filebase: {filebase}, model_args:")

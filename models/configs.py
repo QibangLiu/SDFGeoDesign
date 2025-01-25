@@ -38,6 +38,11 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42):
 
     point_cloud = [torch.tensor(x[:, :2], dtype=torch.float32)
                    for x in point_cloud]  # (Nb,N,3)->(Nb, N, 2)
+    num_p = [x.shape[0] for x in point_cloud]
+    if min(num_p) < NUM_POINT_POINTNET2:
+        raise ValueError(
+            f" Number of sample points {NUM_POINT_POINTNET2}\
+            should be smaller than the number of points in the point cloud {min(num_p)}")
     point_cloud = pad_sequence(
         point_cloud, batch_first=True, padding_value=POINTS_CLOUD_PADDING_VALUE)
     sdf_norm = torch.tensor(sdf_norm)
@@ -66,7 +71,7 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42):
 # %%
 
 
-def models_configs(out_c=128, latent_d=128, *args, **kwargs):
+def models_configs(out_c=256, latent_d=256, *args, **kwargs):
     data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset"
     data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift4_0-10000_aug.pkl"
     data_args = {"data_file": data_file,
@@ -87,7 +92,7 @@ def models_configs(out_c=128, latent_d=128, *args, **kwargs):
         "self_attn_layers": 3,
         "pc_padding_val": POINTS_CLOUD_PADDING_VALUE,
         "d_hidden_sdfnn": [128, 128],
-        "fps_method": "fps_method",
+        "fps_method": fps_method,
     }
     geo_encoder_file_base = f"{script_path}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}_fps{fps_method}"
     geo_encoder_args = {
