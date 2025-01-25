@@ -21,6 +21,7 @@ import torch.nn as nn
 
 from .transformer import ResidualCrossAttentionBlock
 from .pointnet2_utils import sample_and_group, sample_and_group_all
+import warnings
 
 # %%
 
@@ -126,7 +127,8 @@ class PointSetEmbedding(nn.Module):
             # QB: 2025-01-24
             # we can not use group_all here, since some points are padding points
             # if want group_all, padding points should be avoided
-            raise ValueError("group_all can not be used with padding points")
+            warnings.warn(
+                "group_all can not be used with padding points, I have not implemented it yet")
             new_xyz, new_points = sample_and_group_all(xyz, points)
         else:
             new_xyz, new_points = sample_and_group(

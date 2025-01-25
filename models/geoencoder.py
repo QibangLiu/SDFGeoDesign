@@ -148,7 +148,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
 
 
 class implicit_sdf(nn.Module):
-    def __init__(self, latent_d=64, ndim=2, emd_version="nerf"):
+    def __init__(self, latent_d=64, ndim=2, d_hidden_sdfnn=[256, 128], emd_version="nerf"):
 
         super().__init__()
         self.params_pre_name = 'projed_mlp_'
@@ -174,10 +174,13 @@ class implicit_sdf(nn.Module):
             learned_scale=learned_scale,
             use_ln=use_ln,
         )
-        l1 = nn.Linear(latent_d//4, 100)  # , bias=False
-        l2 = nn.Linear(100, 100)
-        l3 = nn.Linear(100, 1)
-        self.nn_layers = nn.ModuleList([l1, nn.SiLU(), l2, nn.SiLU(), l3])
+        self.nn_layers = nn.ModuleList()
+        c_i = latent_d//4
+        for ls in d_hidden_sdfnn:
+            self.nn_layers.append(nn.Linear(c_i, ls))
+            self.nn_layers.append(nn.SiLU())
+            c_i = ls
+        self.nn_layers.append(nn.Linear(c_i, 1))
 
     def forward(self, x, latent):
         """
@@ -209,17 +212,19 @@ def GeoEncoderModelDefinition(out_c=128, latent_d=128,
                               width=128, n_point=128,
                               n_sample=8, radius=0.2,
                               d_hidden=[128, 128],
+                              fps_method: str = 'first',
                               num_heads=4, cross_attn_layers=1,
                               self_attn_layers=3,
-                              pc_padding_val: Optional[int] = None):
+                              pc_padding_val: Optional[int] = None,
+                              d_hidden_sdfnn=[256, 128]):
 
     geo_encoder = PointCloudPerceiverChannelsEncoder(
         input_channels=2, out_c=out_c, width=width,
         latent_d=latent_d, n_point=n_point, n_sample=n_sample,
-        radius=radius, d_hidden=d_hidden,
+        radius=radius, d_hidden=d_hidden, fps_method=fps_method,
         num_heads=num_heads, cross_attn_layers=cross_attn_layers,
         self_attn_layers=self_attn_layers, pc_padding_val=pc_padding_val)
-    sdf_NN = implicit_sdf(latent_d=latent_d)
+    sdf_NN = implicit_sdf(latent_d=latent_d, d_hidden_sdfnn=d_hidden_sdfnn)
     print("Total number of parameters of Geo encoder: ", sum(p.numel()
                                                          for p in geo_encoder.parameters()))
     print("Total number of parameters of sdf_MLP: ", sum(p.numel()
@@ -327,47 +332,52 @@ def LoadGeoEncoderModel(file_base, model_params):
 
 
 # %%
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--train_flag", type=str, default="start", help="start or continue, or any other string")
-    parser.add_argument("--epochs", type=int, default=300)
-    parser.add_argument("--learning_rate", type=float, default=1e-3)
-    args, unknown = parser.parse_known_args()
-    print(vars(args))
+# if __name__ == "__main__":
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--train_flag", type=str, default="start", help="start or continue, or any other string")
+parser.add_argument("--epochs", type=int, default=300)
+parser.add_argument("--learning_rate", type=float, default=1e-3)
+args, unknown = parser.parse_known_args()
+print(vars(args))
 
-    configs = models_configs()
-    filebase = configs["GeoEncoder"]["filebase"]
-    model_params = configs["GeoEncoder"]["model_params"]
-    print(f"\n\nGeoEncoder Filebase: {filebase}, model_params:")
-    print(model_params)
-    geo_encoder, sdf_NN = GeoEncoderModelDefinition(**model_params)
-    # trainer = TrainGeoEncoderModel(geo_encoder, sdf_NN, filebase, args.train_flag,
-    #                                epochs=args.epochs, lr=args.learning_rate)
-    print(filebase, " training finished")
+configs = models_configs(out_c=256, latent_d=256)
+filebase = configs["GeoEncoder"]["filebase"]
+model_params = configs["GeoEncoder"]["model_params"]
+print(f"\n\nGeoEncoder Filebase: {filebase}, model_params:")
+model_params["fps_method"] = "fps"
+print(model_params)
+geo_encoder, sdf_NN = GeoEncoderModelDefinition(**model_params)
+# trainer = TrainGeoEncoderModel(geo_encoder, sdf_NN, filebase, args.train_flag,
+#                                epochs=args.epochs, lr=args.learning_rate)
+print(filebase, " training finished")
 # %%
-# geo_encoder.eval()
-# pc = torch.randn(2, 300, 2)
-# padv = -10
+geo_encoder.eval()
+pc = torch.randn(2, 300, 2)
+padv = -10
+pc[0, 180:, :] = padv
+pc[1, 220:, :] = padv
+geo_encoder.pc_padding_val = padv
+params = geo_encoder(pc)
+params = params.detach().cpu().numpy()
+# %%
+# padv = -200
+
 # pc[0, 180:, :] = padv
-# pc[1, 220:, :] = padv
 # geo_encoder.pc_padding_val = padv
-# params = geo_encoder(pc)
-# params = params.detach().cpu().numpy()
-# # %%
-# # padv = -200
+pc_new = pc[:, :240, :]
+seed = torch.randint(0, 100000, (1,)).item()
+# seed = 43646
+torch.manual_seed(seed)
+print("Seed for random permutation: ", seed)
+pc_new = pc_new[:, torch.randperm(pc_new.size(1)), :]
+params_pad = geo_encoder(pc_new, apply_padding_pointnet2=True)
 
-# # pc[0, 180:, :] = padv
-# # geo_encoder.pc_padding_val = padv
-# pc_new = pc  # [:, :180, :]
-# pc_new = pc_new[:, torch.randperm(pc_new.size(1)), :]
-# params_pad = geo_encoder(pc_new, apply_padding_pointnet2=False)
+params_pad = params_pad.detach().cpu().numpy()
+for i in range(len(params)):
+    L2 = np.linalg.norm(params[i] - params_pad[i])/np.linalg.norm(params[i])
 
-# params_pad = params_pad.detach().cpu().numpy()
-# for i in range(len(params)):
-#     L2 = np.linalg.norm(params[i] - params_pad[i])/np.linalg.norm(params[i])
-
-#     print("L2 norm of params with and without padding", L2)
+    print("L2 norm of params with and without padding", L2)
 
 
 # %%

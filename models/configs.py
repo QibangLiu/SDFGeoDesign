@@ -72,8 +72,7 @@ def models_configs(out_c=128, latent_d=128, *args, **kwargs):
                    "test_size": 0.2, "seed": 42}
     """************GeoEncoder parameters************"""
 
-
-    geo_encoder_file_base = f"{script_path}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}"
+    geo_encoder_file_base = f"{script_path}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}_mpointnet_sdfnn"
     geo_encoder_model_params = {
         "out_c": out_c,
         "latent_d": latent_d,
@@ -85,7 +84,8 @@ def models_configs(out_c=128, latent_d=128, *args, **kwargs):
         "num_heads": 4,
         "cross_attn_layers": 1,
         "self_attn_layers": 3,
-        "pc_padding_val": POINTS_CLOUD_PADDING_VALUE
+        "pc_padding_val": POINTS_CLOUD_PADDING_VALUE,
+        "d_hidden_sdfnn": [256, 128],
     }
     geo_encoder_params = {
         "model_params": geo_encoder_model_params,
