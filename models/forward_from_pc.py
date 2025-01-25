@@ -94,9 +94,9 @@ def ForwardModelDefinition(geo_encoder, img_shape=(1, 128, 128),
 # %%
 
 
-def LoadForwardModel(filebase, model_params):
+def LoadForwardModel(filebase, model_args):
     model_path = os.path.join(filebase, "model.ckpt")
-    fwd_model = ForwardModelDefinition(**model_params)
+    fwd_model = ForwardModelDefinition(**model_args)
     state_dict = torch.load(model_path, map_location=device, weights_only=True)
     fwd_model.load_state_dict(state_dict)
     fwd_model.to(device)
@@ -216,17 +216,17 @@ if __name__ == "__main__":
     configs = models_configs(forward_from_pc=True)
 
     filebase = configs["ForwardModel"]["filebase"]
-    model_params = configs["ForwardModel"]["model_params"]
+    model_args = configs["ForwardModel"]["model_args"]
     geo_encoder_filebase = configs["GeoEncoder"]["filebase"]
-    geo_encoder_model_params = configs["GeoEncoder"]["model_params"]
-    print(f"\n\nForwardModel Filebase: {filebase}, model_params:")
-    print(model_params)
-    print(f"\n\nGeoEncoder Filebase: {geo_encoder_filebase}, model_params:")
-    print(geo_encoder_model_params)
+    geo_encoder_model_args = configs["GeoEncoder"]["model_args"]
+    print(f"\n\nForwardModel Filebase: {filebase}, model_args:")
+    print(model_args)
+    print(f"\n\nGeoEncoder Filebase: {geo_encoder_filebase}, model_args:")
+    print(geo_encoder_model_args)
 
     geo_encoder, _ = LoadGeoEncoderModel(
-        geo_encoder_filebase, geo_encoder_model_params)
-    fwd_model = ForwardModelDefinition(geo_encoder, **model_params)
+        geo_encoder_filebase, geo_encoder_model_args)
+    fwd_model = ForwardModelDefinition(geo_encoder, **model_args)
 
     trainer = TrainForwardModel(fwd_model, filebase, args.train_flag,
                                 epochs=args.epochs, lr=args.learning_rate)

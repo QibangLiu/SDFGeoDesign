@@ -13,11 +13,12 @@ from sklearn.model_selection import train_test_split
 
 script_path = os.path.dirname(os.path.abspath(__file__))
 
-data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset"
+data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel"
 data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift4_0-10000_aug.pkl"
 
 
 POINTS_CLOUD_PADDING_VALUE = -10
+NUM_POINT_POINTNET2 = 128
 
 def LoadData(data_file=data_file, test_size=0.2, seed=42):
     with open(data_file, "rb") as f:
@@ -68,16 +69,16 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42):
 def models_configs(out_c=128, latent_d=128, *args, **kwargs):
     data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset"
     data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift4_0-10000_aug.pkl"
-    data_params = {"data_file": data_file,
+    data_args = {"data_file": data_file,
                    "test_size": 0.2, "seed": 42}
     """************GeoEncoder parameters************"""
 
-    geo_encoder_file_base = f"{script_path}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}_mpointnet_sdfnn"
-    geo_encoder_model_params = {
+    fps_method = "fps"
+    geo_encoder_model_args = {
         "out_c": out_c,
         "latent_d": latent_d,
         "width": 128,
-        "n_point": 128,
+        "n_point": NUM_POINT_POINTNET2,
         "n_sample": 8,
         "radius": 0.2,
         "d_hidden": [128, 128],
@@ -85,12 +86,13 @@ def models_configs(out_c=128, latent_d=128, *args, **kwargs):
         "cross_attn_layers": 1,
         "self_attn_layers": 3,
         "pc_padding_val": POINTS_CLOUD_PADDING_VALUE,
-        "d_hidden_sdfnn": [256, 128],
+        "d_hidden_sdfnn": [128, 128],
+        "fps_method": "fps_method",
     }
-    geo_encoder_params = {
-        "model_params": geo_encoder_model_params,
+    geo_encoder_file_base = f"{script_path}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}_fps{fps_method}"
+    geo_encoder_args = {
+        "model_args": geo_encoder_model_args,
         "filebase": geo_encoder_file_base,
-        # "data_params": data_params
     }
     """************Forward model parameters************"""
     img_shape = (1, out_c, latent_d)
@@ -110,13 +112,13 @@ def models_configs(out_c=128, latent_d=128, *args, **kwargs):
         fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_noatt"
         fwd_img_shape = (1, 120, 120)
 
-    fwd_model_params = {"img_shape": fwd_img_shape,
+    fwd_model_args = {"img_shape": fwd_img_shape,
                         "channel_mutipliers": channel_mutipliers,
                         "has_attention": has_attention,
                         "first_conv_channels": first_conv_channels,
                         "num_res_blocks": num_res_blocks,
                         "norm_groups": 8}
-    fwd_params = {"model_params": fwd_model_params, "filebase": fwd_filebase}
+    fwd_args = {"model_args": fwd_model_args, "filebase": fwd_filebase}
 
     """************Inverse diffusion model parameters************"""
     channel_multpliers = [1, 2, 4, 8]
@@ -127,13 +129,13 @@ def models_configs(out_c=128, latent_d=128, *args, **kwargs):
     num_res_blocks = 1
     total_timesteps = 500
     inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_outc{out_c}_latentdim{latent_d}"
-    inv_diffusion_model_params = {"img_shape": img_shape, "channel_multpliers": channel_multpliers,
+    inv_diffusion_model_args = {"img_shape": img_shape, "channel_multpliers": channel_multpliers,
                                   "has_attention": has_attention, "fist_conv_channels": fist_conv_channels,
                                   "num_heads": num_heads, "norm_groups": norm_groups, "num_res_blocks": num_res_blocks,
                                   "total_timesteps": total_timesteps}
-    inv_diffusion_params = {
-        "model_params": inv_diffusion_model_params, "filebase": inv_diffusion_filebase}
+    inv_diffusion_args = {
+        "model_args": inv_diffusion_model_args, "filebase": inv_diffusion_filebase}
 
-    params_all = {"GeoEncoder": geo_encoder_params,
-                  "ForwardModel": fwd_params, "InvDiffusion": inv_diffusion_params}
-    return params_all
+    args_all = {"GeoEncoder": geo_encoder_args,
+                "ForwardModel": fwd_args, "InvDiffusion": inv_diffusion_args}
+    return args_all

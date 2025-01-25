@@ -117,8 +117,6 @@ def farthest_point_sample(xyz, npoint, pc_padding_value: Optional[int] = None, d
         mask = dist < distance
         distance[mask] = dist[mask]  # the max distance
         farthest = torch.max(distance, -1)[1]
-        if farthest[0] > 299 or farthest[1] > 299:
-            print(farthest)
     return centroids
 
 

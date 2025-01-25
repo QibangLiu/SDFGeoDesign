@@ -109,10 +109,10 @@ def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion, geo_encoder,
     return trainer
 
 
-def LoadDiffusionInverseModel(file_base, model_params):
+def LoadDiffusionInverseModel(file_base, model_args):
     model_path = os.path.join(file_base, "model.ckpt")
     inv_Unet, gaussian_diffusion = DiffusionInverseModelDefinition(
-        **model_params)
+        **model_args)
     state_dict = torch.load(model_path, map_location=device, weights_only=True)
     inv_Unet.load_state_dict(state_dict)
     inv_Unet.to(device)
@@ -198,17 +198,17 @@ if __name__ == "__main__":
 
     configs = models_configs(forward_from_latent=True)
     filebase = configs["InvDiffusion"]["filebase"]
-    model_params = configs["InvDiffusion"]["model_params"]
+    model_args = configs["InvDiffusion"]["model_args"]
     geo_encoder_filebase = configs["GeoEncoder"]["filebase"]
-    geo_encoder_model_params = configs["GeoEncoder"]["model_params"]
+    geo_encoder_model_args = configs["GeoEncoder"]["model_args"]
     fwd_filebase = configs["ForwardModel"]["filebase"]
-    fwd_model_params = configs["ForwardModel"]["model_params"]
-    print(f"\n\nInvDiffusion Filebase: {filebase}, model_params:")
-    print(model_params)
-    print(f"\n\nGeoEncoder Filebase: {geo_encoder_filebase}, model_params:")
-    print(geo_encoder_model_params)
-    print(f"\n\nForwardModel Filebase: {fwd_filebase}, model_params:")
-    print(fwd_model_params)
+    fwd_model_args = configs["ForwardModel"]["model_args"]
+    print(f"\n\nInvDiffusion Filebase: {filebase}, model_args:")
+    print(model_args)
+    print(f"\n\nGeoEncoder Filebase: {geo_encoder_filebase}, model_args:")
+    print(geo_encoder_model_args)
+    print(f"\n\nForwardModel Filebase: {fwd_filebase}, model_args:")
+    print(fwd_model_args)
 
     train_dataset, test_dataset, grid_coor, sdf_inv_scaler, stress_inv_scaler = LoadData(
         seed=42)
@@ -216,12 +216,12 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False)
 
-    fwd_model = LoadForwardModel(fwd_filebase, fwd_model_params)
+    fwd_model = LoadForwardModel(fwd_filebase, fwd_model_args)
     geo_encoder, sdf_NN = LoadGeoEncoderModel(
-        geo_encoder_filebase, geo_encoder_model_params)
+        geo_encoder_filebase, geo_encoder_model_args)
 
     inv_Unet, gaussian_diffusion = DiffusionInverseModelDefinition(
-        **model_params)
+        **model_args)
     trainer = TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion, geo_encoder, filebase, args.train_flag,
                                          train_loader, test_loader, epochs=args.epochs, lr=args.learning_rate)
 

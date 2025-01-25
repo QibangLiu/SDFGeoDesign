@@ -319,8 +319,8 @@ def TrainGeoEncoderModel(geo_encoder, sdf_NN, filebase, train_flag, epochs=300, 
     return trainer
 
 
-def LoadGeoEncoderModel(file_base, model_params):
-    geo_encoder, sdf_NN = GeoEncoderModelDefinition(**model_params)
+def LoadGeoEncoderModel(file_base, model_args):
+    geo_encoder, sdf_NN = GeoEncoderModelDefinition(**model_args)
     geo_encoder_path = os.path.join(file_base, "encoder", "model.ckpt")
     sdf_NN_path = os.path.join(file_base, "sdf_NN", "model.ckpt")
     for model, path in zip([geo_encoder, sdf_NN], [geo_encoder_path, sdf_NN_path]):
@@ -332,52 +332,50 @@ def LoadGeoEncoderModel(file_base, model_params):
 
 
 # %%
-# if __name__ == "__main__":
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--train_flag", type=str, default="start", help="start or continue, or any other string")
-parser.add_argument("--epochs", type=int, default=300)
-parser.add_argument("--learning_rate", type=float, default=1e-3)
-args, unknown = parser.parse_known_args()
-print(vars(args))
-
-configs = models_configs(out_c=256, latent_d=256)
-filebase = configs["GeoEncoder"]["filebase"]
-model_params = configs["GeoEncoder"]["model_params"]
-print(f"\n\nGeoEncoder Filebase: {filebase}, model_params:")
-model_params["fps_method"] = "fps"
-print(model_params)
-geo_encoder, sdf_NN = GeoEncoderModelDefinition(**model_params)
-# trainer = TrainGeoEncoderModel(geo_encoder, sdf_NN, filebase, args.train_flag,
-#                                epochs=args.epochs, lr=args.learning_rate)
-print(filebase, " training finished")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--train_flag", type=str, default="start", help="start or continue, or any other string")
+    parser.add_argument("--epochs", type=int, default=300)
+    parser.add_argument("--learning_rate", type=float, default=1e-3)
+    args, unknown = parser.parse_known_args()
+    print(vars(args))
+    configs = models_configs(out_c=256, latent_d=256)
+    filebase = configs["GeoEncoder"]["filebase"]
+    model_args = configs["GeoEncoder"]["model_args"]
+    print(f"\n\nGeoEncoder Filebase: {filebase}, model_args:")
+    print(model_args)
+    geo_encoder, sdf_NN = GeoEncoderModelDefinition(**model_args)
+    trainer = TrainGeoEncoderModel(geo_encoder, sdf_NN, filebase, args.train_flag,
+                                   epochs=args.epochs, lr=args.learning_rate)
+    print(filebase, " training finished")
 # %%
-geo_encoder.eval()
-pc = torch.randn(2, 300, 2)
-padv = -10
-pc[0, 180:, :] = padv
-pc[1, 220:, :] = padv
-geo_encoder.pc_padding_val = padv
-params = geo_encoder(pc)
-params = params.detach().cpu().numpy()
-# %%
-# padv = -200
-
+# geo_encoder.eval()
+# pc = torch.randn(2, 300, 2)
+# padv = -10
 # pc[0, 180:, :] = padv
+# pc[1, 220:, :] = padv
 # geo_encoder.pc_padding_val = padv
-pc_new = pc[:, :240, :]
-seed = torch.randint(0, 100000, (1,)).item()
-# seed = 43646
-torch.manual_seed(seed)
-print("Seed for random permutation: ", seed)
-pc_new = pc_new[:, torch.randperm(pc_new.size(1)), :]
-params_pad = geo_encoder(pc_new, apply_padding_pointnet2=True)
+# params = geo_encoder(pc)
+# params = params.detach().cpu().numpy()
+# # %%
+# # padv = -200
 
-params_pad = params_pad.detach().cpu().numpy()
-for i in range(len(params)):
-    L2 = np.linalg.norm(params[i] - params_pad[i])/np.linalg.norm(params[i])
+# # pc[0, 180:, :] = padv
+# # geo_encoder.pc_padding_val = padv
+# pc_new = pc[:, :240, :]
+# seed = torch.randint(0, 100000, (1,)).item()
+# # seed = 43646
+# torch.manual_seed(seed)
+# print("Seed for random permutation: ", seed)
+# pc_new = pc_new[:, torch.randperm(pc_new.size(1)), :]
+# params_pad = geo_encoder(pc_new, apply_padding_pointnet2=True)
 
-    print("L2 norm of params with and without padding", L2)
+# params_pad = params_pad.detach().cpu().numpy()
+# for i in range(len(params)):
+#     L2 = np.linalg.norm(params[i] - params_pad[i])/np.linalg.norm(params[i])
+
+#     print("L2 norm of params with and without padding", L2)
 
 
 # %%
