@@ -41,8 +41,8 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42):
     num_p = [x.shape[0] for x in point_cloud]
     if min(num_p) < NUM_POINT_POINTNET2:
         raise ValueError(
-            f" Number of sample points {NUM_POINT_POINTNET2}\
-            should be smaller than the number of points in the point cloud {min(num_p)}")
+            f"Number of sample points {NUM_POINT_POINTNET2}\
+            should be smaller than the minimum number of points in the point cloud {min(num_p)}")
     point_cloud = pad_sequence(
         point_cloud, batch_first=True, padding_value=POINTS_CLOUD_PADDING_VALUE)
     sdf_norm = torch.tensor(sdf_norm)
@@ -76,7 +76,7 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
     data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift4_0-10000_aug.pkl"
     data_args = {"data_file": data_file,
                    "test_size": 0.2, "seed": 42}
-    """************GeoEncoder parameters************"""
+    """************GeoEncoder arguments************"""
 
     fps_method = "fps"
     geo_encoder_model_args = {
@@ -99,13 +99,14 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
         "model_args": geo_encoder_model_args,
         "filebase": geo_encoder_file_base,
     }
-    """************Forward model parameters************"""
+    """************Forward model arguments************"""
     img_shape = (1, out_c, latent_d)
     channel_mutipliers = [1, 2, 4, 8]
     has_attention = [False, False, False, False]
     first_conv_channels = 8
     num_res_blocks = 1
-    # Forward model parameters
+    norm_groups = None
+    dropout = 0.1
 
     if "forward_from_pc" in kwargs and kwargs["forward_from_pc"] == True:
         fwd_filebase = f"{script_path}/saved_weights/fwd_fromPC_outc{out_c}_latentdim{latent_d}_noatt"
@@ -114,7 +115,7 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
         fwd_filebase = f"{script_path}/saved_weights/fwd_fromLatent_outc{out_c}_latentdim{latent_d}_noatt"
         fwd_img_shape = img_shape
     else:
-        fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_noatt"
+        fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_noatt_normgroups-{norm_groups}_dropout-{dropout}"
         fwd_img_shape = (1, 120, 120)
 
     fwd_model_args = {"img_shape": fwd_img_shape,
@@ -122,10 +123,11 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
                         "has_attention": has_attention,
                         "first_conv_channels": first_conv_channels,
                         "num_res_blocks": num_res_blocks,
-                        "norm_groups": 8}
+                        "norm_groups": norm_groups,
+                        "dropout": dropout}
     fwd_args = {"model_args": fwd_model_args, "filebase": fwd_filebase}
 
-    """************Inverse diffusion model parameters************"""
+    """************Inverse diffusion model arguments************"""
     channel_multpliers = [1, 2, 4, 8]
     has_attention = [False, False, True, True]
     fist_conv_channels = 16

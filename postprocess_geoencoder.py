@@ -39,7 +39,7 @@ def predict(data, geo_encoder, sdf_NN, grid_coor):
         if isinstance(data, DataLoader):
             for data in data:
                 pc = data[0].to(device)
-                SDF = data[1].to(device)
+                SDF = data[2].to(device)
                 latents = geo_encoder(pc)
                 sdf_pred = sdf_NN(grid_coor, latents)
                 sd_pred.append(sdf_pred.detach().cpu().numpy())
@@ -48,7 +48,7 @@ def predict(data, geo_encoder, sdf_NN, grid_coor):
             sd_true = np.vstack(sd_true)
         else:
             pc = data[0].to(device)
-            SDF = data[1].to(device)
+            SDF = data[2].to(device)
             latents = geo_encoder(pc)
             sdf_pred = sdf_NN(grid_coor, latents)
             sd_pred.append(sdf_pred.detach().cpu().numpy())
@@ -77,7 +77,7 @@ def plot_geo(sd_pred_test, sd_ture_test):
 
     sort_idx = np.argsort(error_s)
     min_index = sort_idx[0]
-    max_index = sort_idx[int(len(sort_idx)*0.97)]
+    max_index = sort_idx[int(len(sort_idx)*0.97-1)]
     median_index = sort_idx[len(sort_idx) // 2]
     print("Index for minimum geo:", min_index,
           "with error", error_s[min_index])
@@ -131,7 +131,8 @@ plot_geo(sd_pred, sd_true)
 test_data = []
 numps = []
 for data in test_dataset:
-  test_data.append((data[0].cpu().numpy()[:], data[1].cpu().numpy()))
+  test_data.append(
+      (data[0].cpu().numpy()[:], data[1].cpu().numpy(), data[2].cpu().numpy()))
 
 
 test_loader = DataLoader(test_data, batch_size=1024, shuffle=False)
@@ -144,7 +145,10 @@ data1 = test_dataset[:1]
 
 # mask = (data1[0][:, 0] == 0).cpu().numpy().astype(np.int32)
 # idx = np.where(mask == 1)[0][3]
-data1_reduced = (data1[0][0][:320][None], data1[1][0][None])
+pc = data1[0][0][:][None]
+pc = pc[:, torch.randperm(pc.size(1))]
+data1_reduced = (pc, data1[1]
+                 [0][None], data1[2][0][None])
 sd_pred_reduced, sd_true = predict(
     data1_reduced, geo_encoder, sdf_NN, grid_coor)
 error_s = np.linalg.norm(sd_pred_reduced-sd_true, axis=1) / \

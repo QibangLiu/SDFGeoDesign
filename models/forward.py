@@ -1,16 +1,24 @@
 # %%
 import os
-from geoencoder import LoadGeoEncoderModel
-from modules.UNets import UNet
 import argparse
-import trainer.torch_trainer as torch_trainer
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
-from configs import models_configs, LoadData
+current_work_path = os.getcwd()
+current_file_dir = os.path.dirname(os.path.abspath(__file__))
+if current_work_path == current_file_dir:
+    from configs import models_configs, LoadData
+    from geoencoder import LoadGeoEncoderModel
+    from modules.UNets import UNet
+    from trainer import torch_trainer
+else:
+    from .configs import models_configs, LoadData
+    from .geoencoder import LoadGeoEncoderModel
+    from .modules.UNets import UNet
+    from .trainer import torch_trainer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -29,6 +37,7 @@ class ForwardModel(nn.Module):
         num_out=51,
         num_res_blocks=1,
         norm_groups=8,
+        dropout=None
     ):
         super().__init__()
         self.geo_encoder = geo_encoder
@@ -47,6 +56,7 @@ class ForwardModel(nn.Module):
             has_attention,
             num_res_blocks=num_res_blocks,
             norm_groups=norm_groups,
+            dropout=dropout
         )
         in_channels = channel_mutipliers[0] * first_conv_channels
 
@@ -94,7 +104,8 @@ class ForwardModel(nn.Module):
 def ForwardModelDefinition(geo_encoder, sdf_NN, img_shape=(1, 120, 120),
                            channel_mutipliers=[1, 2, 4, 8],
                            has_attention=[False, False, True, True],
-                           first_conv_channels=8, num_res_blocks=1, norm_groups=8):
+                           first_conv_channels=8, num_res_blocks=1,
+                           norm_groups=8, dropout=None):
     num_out = 51
     fwd_model = ForwardModel(
         geo_encoder,
@@ -106,6 +117,7 @@ def ForwardModelDefinition(geo_encoder, sdf_NN, img_shape=(1, 120, 120),
         num_out=num_out,
         num_res_blocks=num_res_blocks,
         norm_groups=norm_groups,
+        dropout=dropout
     )
     trainable_params = sum(p.numel()
                            for p in fwd_model.parameters() if p.requires_grad)
@@ -239,7 +251,7 @@ if __name__ == "__main__":
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
-    configs = models_configs(out_c=128, latent_d=128)
+    configs = models_configs()
 
     filebase = configs["ForwardModel"]["filebase"]
     model_args = configs["ForwardModel"]["model_args"]

@@ -59,7 +59,6 @@ def square_distance(src, dst):
 
 def index_points(points, idx):
     """
-
     Input:
         points: input points data, [B, N, C]
         idx: sample index data, [B, S], S is number of points to be selected out
@@ -96,12 +95,16 @@ def farthest_point_sample(xyz, npoint, pc_padding_value: Optional[int] = None, d
     if pc_padding_value is not None:
         # QB if padding_value and the points is shuffled
         pad_mask = xyz[:, :, 0] == pc_padding_value  # [B, N]
-        distance[pad_mask] = 0  # avoid sampling the padding points
+        """
+        avoid sampling the padding points
+        for the following farthest point sampling
+        """
+        distance[pad_mask] = 0
         non_pad_idx = torch.arange(N).repeat(B, 1).to(device)
         non_pad_idx = torch.where(~pad_mask, non_pad_idx, float('inf'))
         non_pad_idx, _ = torch.sort(non_pad_idx, dim=1)
         non_pad_idx = non_pad_idx[:, :npoint].long().to(device)
-        """avoid sampling the padding points"""
+        """avoid sampling the padding points for the first point"""
         if deterministic:
             farthest = non_pad_idx[:, 0]
         else:

@@ -1,11 +1,6 @@
 # %%
-from modules.params_proj import ChannelsParamsProj
-from modules.transformer import Transformer
-from modules.point_encoding import PointSetEmbedding, SimplePerceiver
-from modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
 from typing import List, Optional, Tuple, Union
 import argparse
-import trainer.torch_trainer as torch_trainer
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import torch.nn as nn
@@ -13,12 +8,23 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from configs import models_configs, LoadData
-# current_path = os.getcwd()
-# print(current_path)
-# script_directory = os.path.dirname(os.path.abspath(__file__))
-# if current_path == script_directory:
-#     os.chdir("..")
+current_work_path = os.getcwd()
+current_file_dir = os.path.dirname(os.path.abspath(__file__))
+if current_work_path == current_file_dir:
+    from configs import models_configs, LoadData
+    from modules.params_proj import ChannelsParamsProj
+    from modules.transformer import Transformer
+    from modules.point_encoding import PointSetEmbedding, SimplePerceiver
+    from modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
+    from trainer import torch_trainer
+else:
+    from .configs import models_configs, LoadData
+    from .modules.params_proj import ChannelsParamsProj
+    from .modules.transformer import Transformer
+    from .modules.point_encoding import PointSetEmbedding, SimplePerceiver
+    from .modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
+    from .trainer import torch_trainer
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %%
 
@@ -226,10 +232,16 @@ def GeoEncoderModelDefinition(out_c=128, latent_d=128,
         num_heads=num_heads, cross_attn_layers=cross_attn_layers,
         self_attn_layers=self_attn_layers, pc_padding_val=pc_padding_val)
     sdf_NN = implicit_sdf(latent_d=latent_d, d_hidden_sdfnn=d_hidden_sdfnn)
-    print("Total number of parameters of Geo encoder: ", sum(p.numel()
-                                                         for p in geo_encoder.parameters()))
-    print("Total number of parameters of sdf_MLP: ", sum(p.numel()
-                                                         for p in sdf_NN.parameters()))
+    tot_num_params = sum(p.numel() for p in geo_encoder.parameters())
+    trainable_params = sum(p.numel()
+                           for p in geo_encoder.parameters() if p.requires_grad)
+    print(
+        f"Total number of parameters of Geo encoder: {tot_num_params}, {trainable_params} of which are trainable")
+    tot_num_params = sum(p.numel() for p in sdf_NN.parameters())
+    trainable_params = sum(p.numel()
+                           for p in sdf_NN.parameters() if p.requires_grad)
+    print(
+        f"Total number of parameters of SDF NN: {tot_num_params}, {trainable_params} of which are trainable")
     return geo_encoder, sdf_NN
 
 
