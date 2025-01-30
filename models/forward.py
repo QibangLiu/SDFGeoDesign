@@ -11,12 +11,12 @@ current_work_path = os.getcwd()
 current_file_dir = os.path.dirname(os.path.abspath(__file__))
 if current_work_path == current_file_dir:
     from configs import models_configs, LoadData
-    from geoencoder import LoadGeoEncoderModel
+    from geoencoder import LoadGeoEncoderModel, GeoEncoderModelDefinition
     from modules.UNets import UNet
     from trainer import torch_trainer
 else:
     from .configs import models_configs, LoadData
-    from .geoencoder import LoadGeoEncoderModel
+    from .geoencoder import LoadGeoEncoderModel, GeoEncoderModelDefinition
     from .modules.UNets import UNet
     from .trainer import torch_trainer
 
@@ -131,7 +131,7 @@ def ForwardModelDefinition(geo_encoder, sdf_NN, img_shape=(1, 120, 120),
 
 def LoadForwardModel(filebase, fwd_model_args, geo_encoder_model_args):
     model_path = os.path.join(filebase, "model.ckpt")
-    geo_encoder, sdf_NN = LoadGeoEncoderModel(**geo_encoder_model_args)
+    geo_encoder, sdf_NN = GeoEncoderModelDefinition(**geo_encoder_model_args)
     fwd_model = ForwardModelDefinition(geo_encoder, sdf_NN, **fwd_model_args)
     state_dict = torch.load(model_path, map_location=device, weights_only=True)
     fwd_model.load_state_dict(state_dict)

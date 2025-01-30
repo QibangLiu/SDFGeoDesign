@@ -223,7 +223,7 @@ def GeoEncoderModelDefinition(out_c=128, latent_d=128,
                               num_heads=4, cross_attn_layers=1,
                               self_attn_layers=3,
                               pc_padding_val: Optional[int] = None,
-                              d_hidden_sdfnn=[256, 128]):
+                              d_hidden_sdfnn=[128, 128]):
 
     geo_encoder = PointCloudPerceiverChannelsEncoder(
         input_channels=2, out_c=out_c, width=width,
@@ -337,7 +337,8 @@ def LoadGeoEncoderModel(file_base, model_args):
     geo_encoder_path = os.path.join(file_base, "encoder", "model.ckpt")
     sdf_NN_path = os.path.join(file_base, "sdf_NN", "model.ckpt")
     for model, path in zip([geo_encoder, sdf_NN], [geo_encoder_path, sdf_NN_path]):
-        state_dict = torch.load(path, map_location=device, weights_only=True)
+        state_dict = torch.load(
+            path, map_location=device, weights_only=True)
         model.load_state_dict(state_dict)
         model.to(device)
         model.eval()

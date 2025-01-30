@@ -99,7 +99,7 @@ def farthest_point_sample(xyz, npoint, pc_padding_value: Optional[int] = None, d
         avoid sampling the padding points
         for the following farthest point sampling
         """
-        distance[pad_mask] = 0
+        distance[pad_mask] = -1
         non_pad_idx = torch.arange(N).repeat(B, 1).to(device)
         non_pad_idx = torch.where(~pad_mask, non_pad_idx, float('inf'))
         non_pad_idx, _ = torch.sort(non_pad_idx, dim=1)
@@ -123,7 +123,8 @@ def farthest_point_sample(xyz, npoint, pc_padding_value: Optional[int] = None, d
         centroid = xyz[batch_indices, farthest, :].view(B, 1, C)  # [B, 1, C]
         dist = torch.sum((xyz - centroid) ** 2, -1)  # [B, N]
         mask = dist < distance
-        distance[mask] = dist[mask]  # the max distance
+        # the max distance, for the one have been sampled, the distance is 0
+        distance[mask] = dist[mask]
         farthest = torch.max(distance, -1)[1]
     return centroids
 

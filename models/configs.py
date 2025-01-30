@@ -106,7 +106,7 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
     first_conv_channels = 8
     num_res_blocks = 1
     norm_groups = None
-    dropout = 0.1
+    dropout = None
 
     if "forward_from_pc" in kwargs and kwargs["forward_from_pc"] == True:
         fwd_filebase = f"{script_path}/saved_weights/fwd_fromPC_outc{out_c}_latentdim{latent_d}_noatt"
@@ -129,14 +129,21 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
 
     """************Inverse diffusion model arguments************"""
     channel_multpliers = [1, 2, 4, 8]
-    has_attention = [False, False, True, True]
     fist_conv_channels = 16
     num_heads = 4
     norm_groups = 8
     num_res_blocks = 1
     total_timesteps = 500
-    inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_outc{out_c}_latentdim{latent_d}"
-    inv_diffusion_model_args = {"img_shape": img_shape, "channel_multpliers": channel_multpliers,
+    if "diffusion_from_lattent" in kwargs and kwargs["diffusion_from_lattent"] == True:
+        inv_img_shape = img_shape
+        inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_from_lattent_outc{out_c}_latentdim{latent_d}"
+        has_attention = [False, False, False, True]
+
+    else:
+        inv_img_shape = (1, 120, 120)
+        has_attention = [False, False, True, True]
+        inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_outc{out_c}_latentdim{latent_d}"
+    inv_diffusion_model_args = {"img_shape": inv_img_shape, "channel_multpliers": channel_multpliers,
                                   "has_attention": has_attention, "fist_conv_channels": fist_conv_channels,
                                   "num_heads": num_heads, "norm_groups": norm_groups, "num_res_blocks": num_res_blocks,
                                   "total_timesteps": total_timesteps}

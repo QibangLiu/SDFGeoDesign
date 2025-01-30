@@ -3,15 +3,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from models.geoencoder import LoadGeoEncoderModel
+from models import configs
 from models.configs import models_configs, LoadData
 from torch.utils.data import DataLoader
 from skimage import measure
+from tqdm import tqdm
 # import os
 # os.chdir("./models")
-
+configs.POINTS_CLOUD_PADDING_VALUE=-0.1
 device = "cuda" if torch.cuda.is_available() else "cpu"
 # %%
-configs = models_configs(out_c=256, latent_d=256)
+configs = models_configs()
 filebase = configs["GeoEncoder"]["filebase"]
 model_args = configs["GeoEncoder"]["model_args"]
 print(f"\n\nGeoEncoder Filebase: {filebase}, model_args:")
@@ -37,7 +39,7 @@ def predict(data, geo_encoder, sdf_NN, grid_coor):
     sdf_NN.eval()
     with torch.no_grad():
         if isinstance(data, DataLoader):
-            for data in data:
+            for data in tqdm(data, desc="Predicting"):
                 pc = data[0].to(device)
                 SDF = data[2].to(device)
                 latents = geo_encoder(pc)
@@ -58,65 +60,16 @@ def predict(data, geo_encoder, sdf_NN, grid_coor):
     return sd_pred, sd_true
 
 
-# %%
-titles = ["best", "50% percentile", "97% percentile"]
-
-
-def plot_geo(sd_pred_test, sd_ture_test):
-    error_s = np.linalg.norm(sd_pred-sd_true, axis=1) / \
-        np.linalg.norm(sd_true, axis=1)
-    mean, std = np.mean(error_s), np.std(error_s)
-    fig = plt.figure(figsize=(4.8, 3.6))
-    ax = plt.subplot(1, 1, 1)
-
-    _ = ax.hist(error_s, bins=20, color="skyblue", edgecolor="black")
-    ax.set_xlabel("L2 relative error")
-    ax.set_ylabel("Frequency")
-
-    print(f"Mean L2 error of SDF: {mean}, std: {std}")
-
-    sort_idx = np.argsort(error_s)
-    min_index = sort_idx[0]
-    max_index = sort_idx[int(len(sort_idx)*0.97-1)]
-    median_index = sort_idx[len(sort_idx) // 2]
-    print("Index for minimum geo:", min_index,
-          "with error", error_s[min_index])
-    print("Index for 97 percentile geo:", max_index,
-          "with error", error_s[max_index])
-    print("Index for median geo:", median_index,
-          "with error", error_s[median_index])
-    indices = np.array([min_index, median_index, max_index])
-    nr, nc = 1, 3
-    fig = plt.figure(figsize=(nc*4.8, nr*3.6))
-    for i, index in enumerate(indices):
-
-        ax = plt.subplot(nr, nc, i+1)
-        sd_pred_i = sd_pred_test[index].reshape(x_grids.shape)
-        sd_true_i = sd_ture_test[index].reshape(x_grids.shape)
-        pred_geo = measure.find_contours(
-            sd_pred_i, 0, positive_orientation='high')
-        true_geo = measure.find_contours(
-            sd_true_i, 0, positive_orientation='high')
-        for c, contour in enumerate(true_geo):
-            if c == 0:
-                ax.plot(contour[:, 1], contour[:, 0],
-                        'r', linewidth=2, label="Truth")
-            else:
-                ax.plot(contour[:, 1], contour[:, 0], 'r', linewidth=2)
-        for c, contour in enumerate(pred_geo):
-            if c == 0:
-                ax.plot(contour[:, 1], contour[:, 0], '--b',
-                        linewidth=2, label="Predicted")
-            else:
-                ax.plot(contour[:, 1], contour[:, 0], '--b', linewidth=2)
-
-        ax.legend()
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
-        ax.set_aspect("equal")
-        ax.set_title(f"{titles[i]}")
-
-        plt.tight_layout()
+def plot_geo_from_sdf(sdf, ax, line_style, label):
+    geo = measure.find_contours(
+        sdf, 0, positive_orientation='high')
+    for c, contour in enumerate(geo):
+        contour = contour*1.2/119-0.1
+        if c == 0:
+            ax.plot(contour[:, 1], contour[:, 0], line_style,
+                    linewidth=2, label=label)
+        else:
+            ax.plot(contour[:, 1], contour[:, 0], line_style, linewidth=2)
 
 
 # %%
@@ -124,34 +77,121 @@ test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False)
 sd_pred, sd_true = predict(test_loader, geo_encoder, sdf_NN, grid_coor)
 sd_pred = sdf_inv_scaler(sd_pred)
 sd_true = sdf_inv_scaler(sd_true)
-plot_geo(sd_pred, sd_true)
+# %%
+error_s = np.linalg.norm(sd_pred-sd_true, axis=1) / \
+        np.linalg.norm(sd_true, axis=1)
+mean, std = np.mean(error_s), np.std(error_s)
+fig = plt.figure(figsize=(4.8, 3.6))
+ax = plt.subplot(1, 1, 1)
+
+_ = ax.hist(error_s, bins=20, color="skyblue", edgecolor="black")
+ax.set_xlabel("L2 relative error")
+ax.set_ylabel("Frequency")
+
+print(f"Mean L2 error of SDF: {mean}, std: {std}")
+
+sort_idx = np.argsort(error_s)
+titles = ["best", "32% percentile", "64% percentile", "97% percentile"]
+min_index = sort_idx[0]
+max_index = sort_idx[int(len(sort_idx)*0.97-1)]
+median_index = sort_idx[int(len(sort_idx) * 0.32)]
+median_index2 = sort_idx[int(len(sort_idx) * 0.64)]
+indices = np.array([min_index, median_index, median_index2, max_index])
+for i in range(len(indices)):
+    print(
+        f"Index {i} for {titles[i]}: {indices[i]}, error: {error_s[indices[i]]}")
+
+nr, nc = 1, 4
+fig = plt.figure(figsize=(nc*4.8, nr*3.6))
+for i, index in enumerate(indices):
+    ax = plt.subplot(nr, nc, i+1)
+    sd_pred_i = sd_pred[index].reshape(x_grids.shape)
+    sd_true_i = sd_true[index].reshape(x_grids.shape)
+    plot_geo_from_sdf(sd_true_i, ax, 'r', label="Truth")
+    plot_geo_from_sdf(sd_pred_i, ax, '--b', label="Predicted")
+    ax.legend()
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_aspect("equal")
+    ax.set_title(f"{titles[i]}")
+
+    plt.tight_layout()
+
 
 # %%
 # Extract data from test_dataset
-test_data = []
-numps = []
-for data in test_dataset:
-  test_data.append(
-      (data[0].cpu().numpy()[:], data[1].cpu().numpy(), data[2].cpu().numpy()))
+test_data = test_dataset[min_index]
+test_data_padded = (test_data[0][None], test_data[1][None], test_data[2][None])
+sd_pred, sd_true = predict(test_data_padded, geo_encoder, sdf_NN, grid_coor)
+sd_pred_padded = sdf_inv_scaler(sd_pred[0]).reshape(x_grids.shape)
+sd_true = sdf_inv_scaler(sd_true[0]).reshape(x_grids.shape)
+true_geo = measure.find_contours(sd_true, 0, positive_orientation='high')
+pred_padded_geo = measure.find_contours(
+    sd_pred_padded, 0, positive_orientation='high')
 
-
-test_loader = DataLoader(test_data, batch_size=1024, shuffle=False)
-sd_pred, sd_true = predict(test_loader, geo_encoder, sdf_NN, grid_coor)
-sd_pred = sdf_inv_scaler(sd_pred)
-sd_true = sdf_inv_scaler(sd_true)
-plot_geo(sd_pred, sd_true)
+fig = plt.figure(figsize=(4.8, 3.6))
+ax = plt.subplot(1, 1, 1)
+plot_geo_from_sdf(sd_true, ax, 'r', label="Truth")
+plot_geo_from_sdf(sd_pred_padded, ax, '--b', label="Predicted")
 # %%
-data1 = test_dataset[:1]
+idx_pad = np.where(test_data[0][:, 0] == -10)[0][0]
+pc_no_padded = test_data[0][:idx_pad]
+latents = geo_encoder(pc_no_padded[None].to(device))
+sdf_pred = sdf_NN(grid_coor, latents)
+sdf_pred = sdf_inv_scaler(sdf_pred.detach().cpu().numpy())
+sd_pred_no_padded = sdf_pred.reshape(x_grids.shape)
 
-# mask = (data1[0][:, 0] == 0).cpu().numpy().astype(np.int32)
-# idx = np.where(mask == 1)[0][3]
-pc = data1[0][0][:][None]
-pc = pc[:, torch.randperm(pc.size(1))]
-data1_reduced = (pc, data1[1]
-                 [0][None], data1[2][0][None])
-sd_pred_reduced, sd_true = predict(
-    data1_reduced, geo_encoder, sdf_NN, grid_coor)
-error_s = np.linalg.norm(sd_pred_reduced-sd_true, axis=1) / \
-    np.linalg.norm(sd_pred_reduced, axis=1)
-print("Error for reduced data:", error_s)
+
+# %%
+
+pc_reduced = pc_no_padded[::2]
+latents = geo_encoder(pc_reduced[None].to(device))
+sdf_pred = sdf_NN(grid_coor, latents)
+sdf_pred = sdf_inv_scaler(sdf_pred.detach().cpu().numpy())
+sd_pred_reduced = sdf_pred.reshape(x_grids.shape)
+
+
+# %%
+pc_shuffuled = pc_no_padded[torch.randperm(pc_no_padded.size(0))]
+latents = geo_encoder(pc_shuffuled[None].to(device))
+sdf_pred = sdf_NN(grid_coor, latents)
+sdf_pred = sdf_inv_scaler(sdf_pred.detach().cpu().numpy())
+sd_pred_shuffled = sdf_pred.reshape(x_grids.shape)
+
+nc, nr = 4, 1
+p_size = 30
+fig, axes = plt.subplots(nr, nc, figsize=(
+    nc*4.8, nr*3.6), constrained_layout=True)
+ax = axes[0]
+c = ax.scatter(pc_no_padded[:, 0], pc_no_padded[:, 1],
+               s=p_size, c=range(len(pc_no_padded)), cmap="rainbow")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.set_title("Original PC")
+fig.colorbar(c, ax=axes[0], location='left', label="points indices")
+ax = axes[1]
+_ = ax.scatter(pc_reduced[:, 0], pc_reduced[:, 1], s=p_size,
+               c=range(len(pc_reduced)), cmap="rainbow")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.set_title("Reduced PC")
+ax = axes[2]
+_ = ax.scatter(pc_shuffuled[:, 0], pc_shuffuled[:, 1],
+               s=p_size, c=range(len(pc_shuffuled)), cmap="rainbow")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.set_title("Shuffled PC")
+ax = axes[3]
+plot_geo_from_sdf(sd_true, ax, 'r', label="Truth")
+plot_geo_from_sdf(sd_pred_no_padded, ax, '-.g', label="Pred.")
+plot_geo_from_sdf(sd_pred_reduced, ax, '--m', label="Pred. (reduced pc)")
+plot_geo_from_sdf(sd_pred_shuffled, ax, '--c', label="Pred. (shuffled pc)")
+plot_geo_from_sdf(sd_pred_padded, ax, '--b', label="Pred. (padded pc)")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.legend()
+# %%
+
+
+
 # %%

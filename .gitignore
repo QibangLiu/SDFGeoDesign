@@ -10,3 +10,9 @@ __pycache__/
 *.rpy
 *.rec
 *.slurm
+MyJob.*
+abaqus_acis.log
+abaqusis.env
+*.npz
+*.npy
+sample.json
