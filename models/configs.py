@@ -116,6 +116,8 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
         fwd_img_shape = img_shape
     else:
         fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_noatt_normgroups-{norm_groups}_dropout-{dropout}"
+        # has_attention = [False, False, True, True]
+        # fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_normgroups-{norm_groups}_dropout-{dropout}"
         fwd_img_shape = (1, 120, 120)
 
     fwd_model_args = {"img_shape": fwd_img_shape,

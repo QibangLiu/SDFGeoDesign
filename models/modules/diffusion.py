@@ -281,7 +281,12 @@ class GaussianDiffusion:
         conditioning=True,
         timesteps=None,
         all_timesteps=False,
+        seed=None
     ):
+        if seed is not None:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(seed)
         if image_shape is None:
             image_shape = self.img_shape
         return self.p_sample_loop(

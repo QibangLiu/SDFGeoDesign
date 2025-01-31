@@ -78,11 +78,24 @@ def write_geo_file(geo_contours, working_dir):
 
 
 # %%
-def run_abaqus_sim(geo_contours, working_dir, abaqus_exe=None):
+def run_abaqus_sim(geo_contours, working_dir, abaqus_exe=None, run_abaqus=False):
+    """
+    Args:
+        geo_contours: tuple, (shell_contours, hole_contours)
+        working_dir: str, the working directory
+        abaqus_exe: str, the path to the abaqus executable
+        run_abaqus: bool, whether to run the abaqus simulation,if True, run the simulation,
+                even if the simulation result already exists
+    Returns:
+        femdata: np.ndarray, the stress-strain data
+    """
+    if len(geo_contours[0]) > 1:
+        raise ValueError("Only one shell contour is supported")
+
     os.makedirs(working_dir, exist_ok=True)
     prev_dir = os.getcwd()
     ss_file = os.path.join(working_dir, 'stress_strain.csv')
-    if not os.path.exists(ss_file):
+    if not os.path.exists(ss_file) or run_abaqus:
         write_geo_file(geo_contours, working_dir)
         # Define the Abaqus command
         abaqus_command = f"{abaqus_exe} cae -noGUI {ABAQUS_SCRIPT}"

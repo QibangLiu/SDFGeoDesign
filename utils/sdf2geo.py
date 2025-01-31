@@ -163,3 +163,22 @@ def classify_contours(sdf):
     is_periodic = check_periodic(shell_contours)
 
     return shell_contours, holes_contours, is_periodic
+
+
+# %%
+
+def filter_out_unit_cell(sdfs_all, no_isolated=True):
+    geo_contours = []
+    periodic_ids = []
+    for i, sdf in enumerate(sdfs_all):
+        shell_contours, holes_contours, is_periodic = classify_contours(sdf)
+        if is_periodic:
+            if no_isolated:
+                if len(shell_contours) == 1:
+                    periodic_ids.append(i)
+                    geo_contours.append((shell_contours, holes_contours))
+            else:
+                periodic_ids.append(i)
+                geo_contours.append((shell_contours, holes_contours))
+
+    return geo_contours, periodic_ids
