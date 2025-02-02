@@ -13,8 +13,8 @@ from sklearn.model_selection import train_test_split
 
 script_path = os.path.dirname(os.path.abspath(__file__))
 
-data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel"
-data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift4_0-10000_aug.pkl"
+data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2DOriginal/dataset/augmentation_split_intervel"
+data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift2_0-28611_aug.pkl"
 
 
 POINTS_CLOUD_PADDING_VALUE = -10
@@ -72,10 +72,6 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42):
 
 
 def models_configs(out_c=256, latent_d=256, *args, **kwargs):
-    data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset"
-    data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift4_0-10000_aug.pkl"
-    data_args = {"data_file": data_file,
-                   "test_size": 0.2, "seed": 42}
     """************GeoEncoder arguments************"""
 
     fps_method = "fps"
