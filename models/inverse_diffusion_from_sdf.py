@@ -81,7 +81,8 @@ def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion,
             labels = data[1].to(self.device)
             latent = self.geo_encoder(pc)
             normalized_sdf = self.sdf_NN(grid_coor, latent)  # (B, N)
-            normalized_sdf = normalized_sdf.view(-1, 1, 120, 120)
+            nx = int((grid_coor.shape[0])**0.5)
+            normalized_sdf = normalized_sdf.view(-1, 1, nx, nx)
             batch_size = latent.shape[0]
             # random generate mask
             z_uncound = torch.rand(batch_size)

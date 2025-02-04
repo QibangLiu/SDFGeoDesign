@@ -13,14 +13,19 @@ from sklearn.model_selection import train_test_split
 
 script_path = os.path.dirname(os.path.abspath(__file__))
 
-data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2DOriginal/dataset/augmentation_split_intervel"
-data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift2_0-28611_aug.pkl"
+data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel"
+data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift8_0-10000_aug.pkl"
 
 
 POINTS_CLOUD_PADDING_VALUE = -10
 NUM_POINT_POINTNET2 = 128
+NX_GRID = 32
+x_g = np.linspace(-0.1, 1.1, NX_GRID, dtype=np.float32)
+X_g, Y_g = np.meshgrid(x_g, x_g)
+GRID_POINTS = np.vstack([X_g.ravel(), Y_g.ravel()]).T
 
-def LoadData(data_file=data_file, test_size=0.2, seed=42):
+
+def LoadData(data_file=data_file, test_size=0.2, seed=42, geoencoder=False):
     with open(data_file, "rb") as f:
         data = pickle.load(f)
     sdf = data["sdf"].astype(np.float32)
@@ -53,7 +58,10 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42):
     train_dataset = TensorDataset(
         pc_train, stress_train, sdf_train)
     test_dataset = TensorDataset(pc_test, stress_test, sdf_test)
-    grid_coor = np.vstack([x_grids.ravel(), y_grids.ravel()]).T
+    if geoencoder:
+        grid_coor = np.vstack([x_grids.ravel(), y_grids.ravel()]).T
+    else:
+        grid_coor = GRID_POINTS
     grid_coor = torch.tensor(grid_coor)
 
     def y_inv_trans(y):
@@ -98,11 +106,11 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
     """************Forward model arguments************"""
     img_shape = (1, out_c, latent_d)
     channel_mutipliers = [1, 2, 4, 8]
-    has_attention = [False, False, False, False]
-    first_conv_channels = 8
+    has_attention = [False, False, True, True]
+    first_conv_channels = 32
     num_res_blocks = 1
     norm_groups = None
-    dropout = None
+    dropout = 0.3
 
     if "forward_from_pc" in kwargs and kwargs["forward_from_pc"] == True:
         fwd_filebase = f"{script_path}/saved_weights/fwd_fromPC_outc{out_c}_latentdim{latent_d}_noatt"
@@ -112,9 +120,7 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
         fwd_img_shape = img_shape
     else:
         fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_noatt_normgroups-{norm_groups}_dropout-{dropout}"
-        # has_attention = [False, False, True, True]
-        # fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_normgroups-{norm_groups}_dropout-{dropout}"
-        fwd_img_shape = (1, 120, 120)
+        fwd_img_shape = (1, NX_GRID, NX_GRID)
 
     fwd_model_args = {"img_shape": fwd_img_shape,
                         "channel_mutipliers": channel_mutipliers,
@@ -138,7 +144,7 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
         has_attention = [False, False, False, True]
 
     else:
-        inv_img_shape = (1, 120, 120)
+        inv_img_shape = (1, NX_GRID, NX_GRID)
         has_attention = [False, False, True, True]
         inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_outc{out_c}_latentdim{latent_d}"
     inv_diffusion_model_args = {"img_shape": inv_img_shape, "channel_multpliers": channel_multpliers,

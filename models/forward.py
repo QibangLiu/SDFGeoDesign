@@ -85,12 +85,13 @@ class ForwardModel(nn.Module):
         """
         Args:
             pc: point cloud (B,N,2)
-            grid_points: grid points (Nx*Ny,2) Nx=Ny=120
+            grid_points: grid points (Nx*Ny,2)
         """
         # (B, N, 2)->(B,latent_dim,out_c)
         latent = self.geo_encoder(pc)
         normalized_sdf = self.sdf_NN(grid_points, latent)  # (B, N)
-        normalized_sdf = normalized_sdf.view(-1, 1, 120, 120)
+        nx = int((grid_points.shape[0])**0.5)
+        normalized_sdf = normalized_sdf.view(-1, 1, nx, nx)
         x = self.forward_from_sdf(normalized_sdf)
         #  (B, 51)
         return x
@@ -101,7 +102,7 @@ class ForwardModel(nn.Module):
         pass
 
 
-def ForwardModelDefinition(geo_encoder, sdf_NN, img_shape=(1, 120, 120),
+def ForwardModelDefinition(geo_encoder, sdf_NN, img_shape=(1, 32, 32),
                            channel_mutipliers=[1, 2, 4, 8],
                            has_attention=[False, False, True, True],
                            first_conv_channels=8, num_res_blocks=1,
@@ -181,7 +182,7 @@ def TrainForwardModel(fwd_model, filebase, train_flag, epochs=300, lr=1e-3):
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="val_loss", save_best_only=True)
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.7, patience=40)
+        optimizer, factor=0.7, patience=60)
     trainer.compile(
         optimizer=optimizer,
         loss_fn=nn.MSELoss(),
