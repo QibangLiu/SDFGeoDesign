@@ -7,23 +7,22 @@ import torch.nn as nn
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
+import warnings
 import os
-current_work_path = os.getcwd()
-current_file_dir = os.path.dirname(os.path.abspath(__file__))
-if current_work_path == current_file_dir:
-    from configs import models_configs, LoadData
-    from modules.params_proj import ChannelsParamsProj
-    from modules.transformer import Transformer
-    from modules.point_encoding import PointSetEmbedding, SimplePerceiver
-    from modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
-    from trainer import torch_trainer
-else:
+if __package__:
     from .configs import models_configs, LoadData
     from .modules.params_proj import ChannelsParamsProj
     from .modules.transformer import Transformer
     from .modules.point_encoding import PointSetEmbedding, SimplePerceiver
     from .modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
     from .trainer import torch_trainer
+else:
+    from configs import models_configs, LoadData
+    from modules.params_proj import ChannelsParamsProj
+    from modules.transformer import Transformer
+    from modules.point_encoding import PointSetEmbedding, SimplePerceiver
+    from modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
+    from trainer import torch_trainer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %%
@@ -75,6 +74,11 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.out_c = out_c
         self.pc_padding_val = pc_padding_val
         self.fps_method = fps_method
+
+        if d_hidden[-1] != self.width:
+            warnings.warn(
+                "PointCloudPerceiverChannelsEncoder: d_hidden[-1] should be equal to width. d_hidden[-1] is set to width!!!")
+            d_hidden[-1] = self.width
         # position embeding + linear layer
         self.pos_emb_linear = PosEmbLinear("nerf", input_channels, self.width)
 

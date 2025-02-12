@@ -7,19 +7,16 @@ import torch.nn as nn
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
-current_work_path = os.getcwd()
-current_file_dir = os.path.dirname(os.path.abspath(__file__))
-if current_work_path == current_file_dir:
-    from configs import models_configs, LoadData
-    from geoencoder import LoadGeoEncoderModel, GeoEncoderModelDefinition
-    from modules.UNets import UNet
-    from trainer import torch_trainer
-else:
+if __package__:
     from .configs import models_configs, LoadData
     from .geoencoder import LoadGeoEncoderModel, GeoEncoderModelDefinition
     from .modules.UNets import UNet
     from .trainer import torch_trainer
-
+else:
+    from configs import models_configs, LoadData
+    from geoencoder import LoadGeoEncoderModel, GeoEncoderModelDefinition
+    from modules.UNets import UNet
+    from trainer import torch_trainer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %%
@@ -182,7 +179,7 @@ def TrainForwardModel(fwd_model, filebase, train_flag, epochs=300, lr=1e-3):
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="val_loss", save_best_only=True)
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.7, patience=60)
+        optimizer, factor=0.7, patience=40)
     trainer.compile(
         optimizer=optimizer,
         loss_fn=nn.MSELoss(),

@@ -8,19 +8,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 current_work_path = os.getcwd()
 current_file_dir = os.path.dirname(os.path.abspath(__file__))
-if current_work_path == current_file_dir:
-    from geoencoder import LoadGeoEncoderModel
-    from configs import models_configs, LoadData
-    from modules.UNets import UNet, UNetTimeStep
-    from modules.diffusion import GaussianDiffusion
-    from trainer import torch_trainer
-else:
+if __package__:
     from .geoencoder import LoadGeoEncoderModel
     from .configs import models_configs, LoadData
     from .modules.UNets import UNet, UNetTimeStep
     from .modules.diffusion import GaussianDiffusion
     from .trainer import torch_trainer
-
+else:
+    from geoencoder import LoadGeoEncoderModel
+    from configs import models_configs, LoadData
+    from modules.UNets import UNet, UNetTimeStep
+    from modules.diffusion import GaussianDiffusion
+    from trainer import torch_trainer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %%
@@ -135,7 +134,7 @@ def EvaluateDiffusionInverseModel(fwd_model, inv_Unet, gaussian_diffusion, sdf_N
     Ytarget = Ytarget.to(device)
     labels = Ytarget.repeat(num_sol, 1)
     latent = gaussian_diffusion.sample(
-        inv_Unet, labels, w=2, clip_denoised=False, conditioning=True
+        inv_Unet, labels, w=2, clip_denoised=False
     )
     latent = torch.tensor(latent).to(device)
     with torch.no_grad():

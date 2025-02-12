@@ -4,6 +4,7 @@ from scipy.spatial.distance import pdist, squareform
 import os
 import json
 import numpy as np
+import warnings
 SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 ABAQUS_SCRIPT = os.path.join(SCRIPT_PATH, 'abaqus_script_sim.py')
 # %%
@@ -104,7 +105,8 @@ def run_abaqus_sim(geo_contours, working_dir, abaqus_exe=None, run_abaqus=False)
         os.system(abaqus_command)
         os.chdir(prev_dir)
     if not os.path.exists(ss_file):
-        raise ValueError("Failed to run Abaqus simulation!!!")
+        warnings.warn("Failed to run Abaqus simulation!!!")
+        femdata = np.full((51,), np.nan)
     else:
         femdata = np.loadtxt(ss_file, delimiter=',', skiprows=1)
     return femdata

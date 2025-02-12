@@ -152,9 +152,10 @@ def classify_contours(sdf):
                 holes_ids.append(i)
                 break
     shell_ids = [i for i in range(len(polygons)) if i not in holes_ids]
-    # because the sdf is evaluate on 120x120 grid， [-0.1,1.1]x[-0.1,1.1]
-    shell_contours = [(contours[i]*1.2/119-0.1) for i in shell_ids]
-    holes_contours = [(contours[i]*1.2/119-0.1) for i in holes_ids]
+    # because the sdf is evaluate on nxxnx grid， [-0.1,1.1]x[-0.1,1.1]
+    nx = sdf.shape[0]-1
+    shell_contours = [(contours[i]*1.2/nx-0.1) for i in shell_ids]
+    holes_contours = [(contours[i]*1.2/nx-0.1) for i in holes_ids]
     shell_contours = [change_start_contour(
         contour) for contour in shell_contours]
     shell_contours = [simplify_shell_contour(

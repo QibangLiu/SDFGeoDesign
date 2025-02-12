@@ -7,18 +7,16 @@ import torch.nn as nn
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
-current_work_path = os.getcwd()
-current_file_dir = os.path.dirname(os.path.abspath(__file__))
-if current_work_path == current_file_dir:
-    from trainer import torch_trainer
-    from modules.UNets import UNet
-    from geoencoder import LoadGeoEncoderModel
-    from configs import models_configs, LoadData
-else:
+if __package__:
     from .trainer import torch_trainer
     from .modules.UNets import UNet
     from .geoencoder import LoadGeoEncoderModel
     from .configs import models_configs, LoadData
+else:
+    from trainer import torch_trainer
+    from modules.UNets import UNet
+    from geoencoder import LoadGeoEncoderModel
+    from configs import models_configs, LoadData
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %%

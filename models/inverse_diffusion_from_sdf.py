@@ -6,22 +6,20 @@ from skimage import measure
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-current_work_path = os.getcwd()
-current_file_dir = os.path.dirname(os.path.abspath(__file__))
-if current_work_path == current_file_dir:
-    from geoencoder import LoadGeoEncoderModel
-    from forward import LoadForwardModel
-    from configs import models_configs, LoadData
-    from modules.UNets import UNet, UNetTimeStep
-    from modules.diffusion import GaussianDiffusion
-    from trainer import torch_trainer
-else:
+if __package__:
     from .geoencoder import LoadGeoEncoderModel
     from .forward import LoadForwardModel
     from .configs import models_configs, LoadData
     from .modules.UNets import UNet, UNetTimeStep
     from .modules.diffusion import GaussianDiffusion
     from .trainer import torch_trainer
+else:
+    from geoencoder import LoadGeoEncoderModel
+    from forward import LoadForwardModel
+    from configs import models_configs, LoadData
+    from modules.UNets import UNet, UNetTimeStep
+    from modules.diffusion import GaussianDiffusion
+    from trainer import torch_trainer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %%
@@ -32,7 +30,7 @@ def DiffusionInverseModelDefinition(img_shape=(1, 128, 128),
                                     has_attention=[False, False, True, True],
                                     fist_conv_channels=32, num_heads=4,
                                     norm_groups=16,
-                                    num_res_blocks=1, total_timesteps=500):
+                                    num_res_blocks=1, dropout=None, total_timesteps=500):
 
     label_dim = 51
     inv_Unet = UNetTimeStep(
@@ -45,6 +43,7 @@ def DiffusionInverseModelDefinition(img_shape=(1, 128, 128),
         num_heads=num_heads,
         num_res_blocks=num_res_blocks,
         norm_groups=norm_groups,
+        dropout=dropout,
     )
     trainable_params = sum(p.numel()
                            for p in inv_Unet.parameters() if p.requires_grad)
@@ -86,12 +85,10 @@ def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion,
             batch_size = latent.shape[0]
             # random generate mask
             z_uncound = torch.rand(batch_size)
-            batch_mask = (z_uncound > 0.2).int().to(device)
-
+            batch_mask = (z_uncound > 0.01).int().to(device)
             # sample t uniformally for every example in the batch
             t = torch.randint(0, total_timesteps, (batch_size,),
                               device=device).long()
-
             loss = gaussian_diffusion.train_losses(
                 self.models[0], normalized_sdf, t, labels, batch_mask
             )
@@ -105,7 +102,7 @@ def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion,
 
     optimizer = torch.optim.Adam(trainer.parameters(), lr=lr)
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.7, patience=40)
+        optimizer, factor=0.7, patience=20)
     trainer.compile(
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
@@ -118,7 +115,7 @@ def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion,
 
     if train_flag == "continue" or train_flag == "start":
         h = trainer.fit(
-            train_loader, val_loader=None, epochs=epochs, print_freq=1
+            train_loader, val_loader=test_loader, epochs=epochs, print_freq=1
         )
     trainer.save_logs()
     trainer.load_weights(device=device)
@@ -143,7 +140,7 @@ def EvaluateDiffusionInverseModel(fwd_model, inv_Unet, gaussian_diffusion,
     Ytarget = Ytarget.to(device)
     labels = Ytarget.repeat(num_sol, 1)
     sdf = gaussian_diffusion.sample(
-        inv_Unet, labels, w=2, clip_denoised=False, conditioning=True
+        inv_Unet, labels, w=2, clip_denoised=False
     )
     sdf = torch.tensor(sdf).to(device)
     with torch.no_grad():
@@ -226,7 +223,8 @@ if __name__ == "__main__":
     print(f"\n\nForwardModel Filebase: {fwd_filebase}, model_args:")
     print(fwd_model_args)
 
-    train_dataset, test_dataset, grid_coor, sdf_inv_scaler, stress_inv_scaler = LoadData()
+    train_dataset, test_dataset, grid_coor, sdf_inv_scaler, stress_inv_scaler = LoadData(
+        seed=420)
     grid_coor = grid_coor.to(device)
     train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False)

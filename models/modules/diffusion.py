@@ -165,7 +165,7 @@ class GaussianDiffusion:
 
     #
     def p_mean_variance(
-        self, model, x_t, t, c, w, clip_denoised=True, conditioning=True
+        self, model, x_t, t, c, w, clip_denoised=True
     ):
         """
         compute predicted mean and variance of p(x_{t-1} | x_t)
@@ -183,14 +183,20 @@ class GaussianDiffusion:
         batch_size = x_t.shape[0]
         # predict noise using model
 
-        pred_noise_none = model(
+        if w == -1:
+            pred_noise_none = model(
             x_t, t, c, torch.zeros(batch_size).int().to(device))
-        if conditioning:
+            pred_noise = pred_noise_none
+        elif w == 0:
+            pred_noise_c = model(x_t, t, c, torch.ones(
+                batch_size).int().to(device))
+            pred_noise = pred_noise_c
+        else:
+            pred_noise_none = model(
+                x_t, t, c, torch.zeros(batch_size).int().to(device))
             pred_noise_c = model(x_t, t, c, torch.ones(
                 batch_size).int().to(device))
             pred_noise = (1 + w) * pred_noise_c - w * pred_noise_none
-        else:
-            pred_noise = pred_noise_none
 
         # get the predicted x_0: different from the algorithm2 in the paper
         x_recon = self.predict_start_from_noise(x_t, t, pred_noise)
@@ -202,7 +208,7 @@ class GaussianDiffusion:
         return model_mean, posterior_variance, posterior_log_variance
 
     @torch.no_grad()
-    def p_sample(self, model, x_t, t, c, w, clip_denoised=True, conditioning=True):
+    def p_sample(self, model, x_t, t, c, w, clip_denoised=True):
         """
         denoise_step: sample x_{t-1} from x_t and pred_noise:
         1. compute predicted mean and variance of p(x_{t-1} | x_t):
@@ -214,7 +220,7 @@ class GaussianDiffusion:
         """
         # predict mean and variance
         model_mean, _, model_log_variance = self.p_mean_variance(
-            model, x_t, t, c, w, clip_denoised=clip_denoised, conditioning=conditioning
+            model, x_t, t, c, w, clip_denoised=clip_denoised
         )
         noise = torch.randn_like(x_t)
         # no noise when t == 0 QB: to be look into???
@@ -233,7 +239,6 @@ class GaussianDiffusion:
         labels,
         w=2,
         clip_denoised=True,
-        conditioning=True,
         timesteps=None,
         all_timesteps=False,
     ):
@@ -257,8 +262,7 @@ class GaussianDiffusion:
                 torch.full((batch_size,), i, device=device, dtype=torch.long),
                 labels,
                 w,
-                clip_denoised,
-                conditioning=conditioning,
+                clip_denoised
             )
             if all_timesteps:
                 imgs.append(img.cpu().numpy())
@@ -278,7 +282,6 @@ class GaussianDiffusion:
         w=2,
         image_shape=None,
         clip_denoised=True,
-        conditioning=True,
         timesteps=None,
         all_timesteps=False,
         seed=None
@@ -295,7 +298,6 @@ class GaussianDiffusion:
             labels,
             w,
             clip_denoised,
-            conditioning,
             timesteps=timesteps,
             all_timesteps=all_timesteps
         )
@@ -305,7 +307,6 @@ class GaussianDiffusion:
     def ddim_sample(
         self,
         model,
-
         labels,
         image_shape=None,
         ddim_timesteps=50,
@@ -313,7 +314,6 @@ class GaussianDiffusion:
         ddim_discr_method="uniform",
         ddim_eta=0.0,
         clip_denoised=True,
-        conditioning=True,
     ):
         if image_shape is None:
             image_shape = self.img_shape
@@ -367,19 +367,26 @@ class GaussianDiffusion:
             )
 
             # 2. predict noise using model
-
-            pred_noise_none = model(
-                sample_img, t, labels, torch.zeros(
-                    batch_size, dtype=torch.int32).to(device)
-            )
-            if conditioning:
+            if w == -1:
+                pred_noise_none = model(
+                    sample_img, t, labels, torch.zeros(
+                        batch_size, dtype=torch.int32).to(device))
+                pred_noise = pred_noise_none
+            elif w == 0:
+                pred_noise_c = model(
+                    sample_img, t, labels, torch.ones(
+                        batch_size, dtype=torch.int32).to(device)
+                )
+                pred_noise = pred_noise_c
+            else:
+                pred_noise_none = model(
+                    sample_img, t, labels, torch.zeros(
+                        batch_size, dtype=torch.int32).to(device))
                 pred_noise_c = model(
                     sample_img, t, labels, torch.ones(
                         batch_size, dtype=torch.int32).to(device)
                 )
                 pred_noise = (1 + w) * pred_noise_c - w * pred_noise_none
-            else:
-                pred_noise = pred_noise_none
             # 3. get the predicted x_0
             pred_x0 = (
                 sample_img - torch.sqrt((1.0 - alpha_cumprod_t)) * pred_noise
@@ -416,7 +423,7 @@ class GaussianDiffusion:
         # generate random noise
         noise = torch.randn_like(x_start)
         # get x_t
-        x_noisy = self.q_sample(x_start, t, noise=noise)
-        predicted_noise = model(x_noisy, t, c, mask_c)
+        x_t = self.q_sample(x_start, t, noise=noise)
+        predicted_noise = model(x_t, t, c, mask_c)
         loss = nnF.mse_loss(noise, predicted_noise)
         return loss

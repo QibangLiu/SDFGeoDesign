@@ -19,7 +19,7 @@ data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift8_0-10000_aug.pkl"
 
 POINTS_CLOUD_PADDING_VALUE = -10
 NUM_POINT_POINTNET2 = 128
-NX_GRID = 32
+NX_GRID = 120
 x_g = np.linspace(-0.1, 1.1, NX_GRID, dtype=np.float32)
 X_g, Y_g = np.meshgrid(x_g, x_g)
 GRID_POINTS = np.vstack([X_g.ravel(), Y_g.ravel()]).T
@@ -62,6 +62,7 @@ def LoadData(data_file=data_file, test_size=0.2, seed=42, geoencoder=False):
         grid_coor = np.vstack([x_grids.ravel(), y_grids.ravel()]).T
     else:
         grid_coor = GRID_POINTS
+    # grid_coor = np.vstack([x_grids.ravel(), y_grids.ravel()]).T
     grid_coor = torch.tensor(grid_coor)
 
     def y_inv_trans(y):
@@ -107,10 +108,10 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
     img_shape = (1, out_c, latent_d)
     channel_mutipliers = [1, 2, 4, 8]
     has_attention = [False, False, True, True]
-    first_conv_channels = 32
+    first_conv_channels = 16
     num_res_blocks = 1
     norm_groups = None
-    dropout = 0.3
+    dropout = 0.1
 
     if "forward_from_pc" in kwargs and kwargs["forward_from_pc"] == True:
         fwd_filebase = f"{script_path}/saved_weights/fwd_fromPC_outc{out_c}_latentdim{latent_d}_noatt"
@@ -119,7 +120,7 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
         fwd_filebase = f"{script_path}/saved_weights/fwd_fromLatent_outc{out_c}_latentdim{latent_d}_noatt"
         fwd_img_shape = img_shape
     else:
-        fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_noatt_normgroups-{norm_groups}_dropout-{dropout}"
+        fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_noatt_normgroups-{norm_groups}_dropout-{dropout}_nx{NX_GRID}_rerun"
         fwd_img_shape = (1, NX_GRID, NX_GRID)
 
     fwd_model_args = {"img_shape": fwd_img_shape,
@@ -138,6 +139,7 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
     norm_groups = 8
     num_res_blocks = 1
     total_timesteps = 500
+    dropout = None
     if "diffusion_from_lattent" in kwargs and kwargs["diffusion_from_lattent"] == True:
         inv_img_shape = img_shape
         inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_from_lattent_outc{out_c}_latentdim{latent_d}"
@@ -146,11 +148,11 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
     else:
         inv_img_shape = (1, NX_GRID, NX_GRID)
         has_attention = [False, False, True, True]
-        inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_outc{out_c}_latentdim{latent_d}"
+        inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_outc{out_c}_latentdim{latent_d}_dropout{dropout}"
     inv_diffusion_model_args = {"img_shape": inv_img_shape, "channel_multpliers": channel_multpliers,
                                   "has_attention": has_attention, "fist_conv_channels": fist_conv_channels,
                                   "num_heads": num_heads, "norm_groups": norm_groups, "num_res_blocks": num_res_blocks,
-                                  "total_timesteps": total_timesteps}
+                                  "total_timesteps": total_timesteps, "dropout": dropout}
     inv_diffusion_args = {
         "model_args": inv_diffusion_model_args, "filebase": inv_diffusion_filebase}
 
