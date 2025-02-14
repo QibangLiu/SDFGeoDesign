@@ -157,7 +157,8 @@ def query_ball_point(radius, nsample, xyz, new_xyz,
         pad_mask = pad_mask[:, None, :].repeat([1, S, 1])  # [B, S, N]
         group_idx[pad_mask] = N
     if N > 10000:
-        # chunk the sort to avoid OOM
+        # chunk the sort to avoid OOM,
+        # the sort operation costs a lot of memory, if N is Large
         sorted_parts = [
             group_idx[:, i: i + chunk_size, :].sort(dim=-1)[0]
             for i in range(0, S, chunk_size)

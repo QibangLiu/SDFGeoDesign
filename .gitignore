@@ -16,3 +16,5 @@ abaqusis.env
 *.npz
 *.npy
 sample.json
+*.exception
+abaqus_sims/*

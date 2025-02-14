@@ -32,12 +32,12 @@ train_dataset, test_dataset, grid_coor, sdf_inv_scaler, stress_inv_scaler = Load
 
 # %%
 
-def inv_diffusion(testID, num_sol=100, seed=None, w=2):
-    Ytarget = test_dataset[testID][1].unsqueeze(0)
+def inv_diffusion(Ytarget, num_sol=100, seed=None, w=2):
+    # Ytarget = test_dataset[testID][1].unsqueeze(0)
     Ytarget = Ytarget.to(device)
     labels = Ytarget.repeat(num_sol, 1)
     sdf = gaussian_diffusion.sample(
-        inv_Unet, labels, w=2, clip_denoised=False, seed=seed
+        inv_Unet, labels, w=w, clip_denoised=False, seed=seed
     )
     sdf = torch.tensor(sdf).to(device)
     with torch.no_grad():
@@ -48,36 +48,36 @@ def inv_diffusion(testID, num_sol=100, seed=None, w=2):
     Xpred_inv = Xpred_inv.squeeze()
     return Xpred_inv, Ypred_inv, Ytarg_inv
 
+# %%
 
-def design_test(testID, num_sol=100, seed=None, w=2):
 
+def design_test(Ytarget, filebase, num_sol=100, seed=None, w=2, threshold=0.05, overwrite=False):
     start = time.time()
     Xpred_inv, Ypred_inv, Ytarg_inv = inv_diffusion(
-        testID, num_sol=num_sol, seed=seed, w=w)
-    # data = np.load("test_data.npz")
-    # Xpred_inv = data["Xpred_inv"]
-    # Ypred_inv = data["Ypred_inv"]
-    # Ytarg_inv = data["Ytarg_inv"]
+        Ytarget, num_sol=num_sol, seed=seed, w=w)
     end = time.time()
     print(f"Time taken for {num_sol} solutions: {end-start}")
     """evaluate the  accuracy design results by forward model"""
+
+    L2error = np.linalg.norm(Ypred_inv - Ytarg_inv, axis=1) / \
+        np.linalg.norm(Ytarg_inv, axis=1)
+    fig = plt.figure(figsize=(4.8, 3.6))
+    ax = plt.subplot(1, 1, 1)
+    _ = ax.hist(L2error, bins=20, color="skyblue", edgecolor="black")
+    ax.set_xlabel("L2 relative error")
+    ax.set_ylabel("Frequency")
+    mean, std = np.mean(L2error), np.std(L2error)
+    print(f"Mean L2 error of the diffusion design results: {mean}, std: {std}")
+    """random select the 4 designs"""
     # filter out the periodic unit cells
     geo_contours, periodic_ids = filter_out_unit_cell(
         Xpred_inv)
     Ypred_inv = Ypred_inv[periodic_ids]
     Ytarg_inv = Ytarg_inv[periodic_ids]
-    L2error = np.linalg.norm(Ypred_inv - Ytarg_inv, axis=1) / \
-        np.linalg.norm(Ytarg_inv, axis=1)
-    # fig = plt.figure(figsize=(4.8, 3.6))
-    # ax = plt.subplot(1, 1, 1)
-    # _ = ax.hist(L2error, bins=20, color="skyblue", edgecolor="black")
-    # ax.set_xlabel("L2 relative error")
-    # ax.set_ylabel("Frequency")
-    mean, std = np.mean(L2error), np.std(L2error)
-    print(f"Mean L2 error of the diffusion design results: {mean}, std: {std}")
-    """random select the 4 designs"""
+    L2error = L2error[periodic_ids]
     np.random.seed(seed)
-    evl_ids = np.random.choice(np.where(L2error < 0.05)[0], 4, replace=False)
+    evl_ids = np.random.choice(
+        np.where(L2error < threshold)[0], 4, replace=False)
     for i, idx in enumerate(evl_ids):
         print(f"ID: {idx}, L2 error: {L2error[idx]}")
     strain = np.linspace(0, 0.2, 51)
@@ -86,9 +86,10 @@ def design_test(testID, num_sol=100, seed=None, w=2):
     fem_stress = []
     for i, idx in enumerate(evl_ids):
         print(f"Running Abaqus simulation for case {cases[i]}")
-        working_dir = f"./abaqus_sims/testID{testID}-{cases[i]}"
+        working_dir = os.path.join(filebase, cases[i])
+        # working_dir = f"./abaqus_sims/testID{testID}-{cases[i]}"
         femdata = run_abaqus_sim(
-            geo_contours[evl_ids[i]], working_dir, ABAQUS_EXE, run_abaqus=True)
+            geo_contours[evl_ids[i]], working_dir, ABAQUS_EXE, overwrite=overwrite)
         fem_stress.append(femdata[:, 1])
     fem_stress = np.array(fem_stress)
     """plot the results"""
@@ -130,17 +131,20 @@ def design_test(testID, num_sol=100, seed=None, w=2):
     ax.legend()
     ax.set_xlabel(r"$\varepsilon~[\%]$")
     ax.set_ylabel(r"$\sigma~[MPa]$")
+    return geo_contours, Ypred_inv, Ytarg_inv
 
-
-# %%
 
 # %%
 # 37388 \/
 seed = np.random.randint(0, 100000)  # 54010
+seed = 14501
 print(f"Random seed: {seed}")
 np.random.seed(seed)
 testID = np.random.randint(0, len(test_dataset))
 seed_ = np.random.randint(0, 100000)
-design_test(testID, num_sol=200, seed=seed_)
+Ytarget = test_dataset[testID][1].unsqueeze(0)
+filebase = f"./abaqus_sims/testID{testID}"
+geo_contours, Ypred, Ytarg = design_test(
+    Ytarget, filebase, num_sol=200, threshold=0.05, w=2, seed=seed_, overwrite=True)
 
 # %%

@@ -224,7 +224,7 @@ if __name__ == "__main__":
     print(fwd_model_args)
 
     train_dataset, test_dataset, grid_coor, sdf_inv_scaler, stress_inv_scaler = LoadData(
-        seed=420)
+        seed=420)  #
     grid_coor = grid_coor.to(device)
     train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False)
@@ -241,7 +241,7 @@ if __name__ == "__main__":
     trainer = TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion, geo_encoder, sdf_NN, grid_coor, filebase, args.train_flag,
                                          train_loader, test_loader, epochs=args.epochs, lr=args.learning_rate)
 
-    id = 23
+    id = 2897
     Ytarget = test_dataset[id][1].unsqueeze(0)
     EvaluateDiffusionInverseModel(fwd_model, inv_Unet, gaussian_diffusion,
                                   Ytarget, sdf_inv_scaler, stress_inv_scaler,
