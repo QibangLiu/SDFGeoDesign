@@ -213,8 +213,7 @@ class SimplePerceiver(nn.Module):
 
 class PointCloudPerceiverChannelsEncoder(nn.Module):
     """
-    Encode point clouds using a transformer model with an extra output
-    token used to extract a latent vector.
+    Encode point clouds using a transformer model
     """
 
     def __init__(self,
@@ -271,11 +270,11 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
                                 d_hidden=d_hidden, patch_size=patch_size,
                                 padding_mode=padding_mode,
                                 fps_method=fps_method)
-
-        self.register_parameter(
-            "output_tokens",
-            nn.Parameter(torch.randn(self.latent_d, self.width)),
-        )
+        if self.latent_d is not None:
+            self.register_parameter(
+                "output_tokens",
+                nn.Parameter(torch.randn(self.latent_d, self.width)),
+            )
         self.ln_pre = nn.LayerNorm(self.width)
         self.ln_post = nn.LayerNorm(self.width)
 
@@ -299,7 +298,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
             apply_padding_pointnet2 (bool): if True or fps method, set padding value=pc_padding_val for pointnet2
                     otherwise, set padding value=None
         Returns:
-            torch.Tensor: [B,latent_d, out_c]
+            torch.Tensor: [B,latent_d, out_c] if if self.latent_d is not None, else [B,n_point, width]
         """
         # set padding for point set embedding
         if apply_padding_pointnet2 or self.fps_method == "fps":
@@ -332,20 +331,25 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         # [B, Co, No] -> [B, No, Co]
         data_tokens = data_tokens.permute(0, 2, 1)
         batch_size = points.shape[0]
-        latent_tokens = self.output_tokens.unsqueeze(
-            0).repeat(batch_size, 1, 1)  # [B, latent_d, width]
-        # [B, n_point+latent_d, width]
-        h = self.ln_pre(torch.cat([data_tokens, latent_tokens], dim=1))
-        assert h.shape == (batch_size, self.n_point +
-                           self.latent_d, self.width)
-        # [B, n_point+latent_d, width] -> [B,  n_point+latent_d, width]
+        if self.latent_d is not None:
+            latent_tokens = self.output_tokens.unsqueeze(
+                0).repeat(batch_size, 1, 1)  # [B, latent_d, width]
+            # [B, n_point+latent_d, width]
+            h = self.ln_pre(torch.cat([data_tokens, latent_tokens], dim=1))
+            assert h.shape == (batch_size, self.n_point +
+                               self.latent_d, self.width)
+        else:
+            h = self.ln_pre(data_tokens)
+        # [B, Nnl, width] -> [B,  Nnl, width], Nnl=n_point+latent_d or n_point
         # cross_attn. TODO: add mask here, dataset_emb has padding points
         h = self.encoder(h, dataset_emb, key_padding_mask=pading_mask)
-        # [B,  n_point+latent_d, width]-> [B,  n_point+latent_d, width]
+        # [B,  Nnl, width]-> [B,  Nnl, width]
         h = self.processor(h)
-        # [B,  n_point+latent_d, width] -> [B, latent_d, width]
+        # [B,  Nnl, width] -> [B, latent_d, width]
         # -> [B, latent_d, out_c]
-        h = self.output_proj(self.ln_post(h[:, -self.latent_d:]))
+        if self.latent_d is not None:
+            h = h[:, -self.latent_d:]
+        h = self.output_proj(self.ln_post(h))
         h = nn.Tanh()(h)  # project to [-1,1]
         # h = h.view(batch_size, -1)
         return h  # [B, latent_d, out_c]
