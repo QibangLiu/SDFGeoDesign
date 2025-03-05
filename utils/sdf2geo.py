@@ -110,14 +110,15 @@ def check_periodic(contours,  min_x=0, max_x=1, min_y=0, max_y=1, tol_mm=5e-3, t
     bottom_locs = np.array(bottom_locs)[bottom_id]
 
     is_periodic_x, is_periodic_y = False, False
-    if len(left_y) == len(right_y) and np.all(np.isclose(left_y, right_y, atol=tol_p)):
+    if len(left_y) > 0 and len(left_y) == len(right_y) and np.all(np.isclose(left_y, right_y, atol=tol_p)):
         is_periodic_x = True
         # print("Left and right boundary  match")
-    if len(top_x) == len(bottom_x) and np.all(np.isclose(top_x, bottom_x, atol=tol_p)):
+    if len(top_x) > 0 and len(top_x) == len(bottom_x) and np.all(np.isclose(top_x, bottom_x, atol=tol_p)):
         is_periodic_y = True
         # print("Top and bottom boundary match")
 
     if is_periodic_x and is_periodic_y:
+        # average the points on the left, right, bot, top boundary
         for i, (l, r) in enumerate(zip(left_locs, right_locs)):
             if contours[l[0]][l[1], 0] == min_y or contours[l[0]][l[1], 0] == max_y:
                 contours[r[0]][r[1], 0] = contours[l[0]][l[1], 0]

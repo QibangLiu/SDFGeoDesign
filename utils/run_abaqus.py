@@ -93,14 +93,16 @@ def run_abaqus_sim(geo_contours, working_dir, abaqus_exe=None, overwrite=False):
     os.makedirs(working_dir, exist_ok=True)
     prev_dir = os.getcwd()
     ss_file = os.path.join(working_dir, 'stress_strain.csv')
+    if os.path.exists(ss_file) and not overwrite:
+        print(f"Using existed simulation result in '{ss_file}'")
     if not os.path.exists(ss_file) or overwrite:
         if abaqus_exe is None:
             warnings.warn("Abaqus executable file not provided!!!")
-            return np.full((51,), np.nan)
+            return np.full((51, 2), np.nan)
         elif not os.path.exists(abaqus_exe):
             warnings.warn(
                 f"Abaqus executable file '{abaqus_exe}' not found!!!")
-            return np.full((51,), np.nan)
+            return np.full((51, 2), np.nan)
         else:
             write_geo_file(geo_contours, working_dir)
             # Define the Abaqus command
@@ -111,7 +113,7 @@ def run_abaqus_sim(geo_contours, working_dir, abaqus_exe=None, overwrite=False):
             os.chdir(prev_dir)
     if not os.path.exists(ss_file):
         warnings.warn("Failed to run Abaqus simulation!!!")
-        femdata = np.full((51,), np.nan)
+        femdata = np.full((51, 2), np.nan)
     else:
         femdata = np.loadtxt(ss_file, delimiter=',', skiprows=1)
     return femdata

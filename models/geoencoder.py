@@ -12,14 +12,12 @@ import os
 if __package__:
     from .configs import models_configs, LoadData
     from .modules.params_proj import ChannelsParamsProj
-    from .modules.transformer import Transformer
     from .modules.point_encoding import PointCloudPerceiverChannelsEncoder
     from .modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
     from .trainer import torch_trainer
 else:
     from configs import models_configs, LoadData
     from modules.params_proj import ChannelsParamsProj
-    from modules.transformer import Transformer
     from modules.point_encoding import PointCloudPerceiverChannelsEncoder
     from modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
     from trainer import torch_trainer
@@ -28,12 +26,15 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %%
 
 class implicit_sdf(nn.Module):
-    def __init__(self, latent_d=64, ndim=2, d_hidden_sdfnn=[256, 128], emd_version="nerf"):
+    def __init__(self, latent_d=64, in_c=128, ndim=2, d_hidden_sdfnn=[256, 128], emd_version="nerf"):
 
         super().__init__()
         self.params_pre_name = 'projed_mlp_'
         self.emd_version = emd_version
         d = position_encoding_channels(emd_version)
+        # the input latent vector is of shape (B, latent_d, in_c)
+        # desired weight shapes [(v1,c1), (v2,c2), (v3,c3), (v4,c4),...], v is the output channel, c is the input channel
+        # v1+v2+v3+...+vn = latent_d
         weight_shapes = [torch.Size([latent_d//4, d*ndim]), torch.Size(
             [latent_d//4, latent_d//4]),  torch.Size([latent_d//4, latent_d//4]), torch.Size([latent_d//4, latent_d//4])]
 
@@ -44,18 +45,23 @@ class implicit_sdf(nn.Module):
             self.register_parameter(
                 self.params_pre_name+str(i)+'_bias', nn.Parameter(torch.randn(v[0])))
 
-        self.latent_d = latent_d
+        self.in_c = in_c
         learned_scale = 0.0625
         use_ln = True
+        # for projects the input latent vector to the weights of the MLP
+        # inputs vector of shape (B, latent_d, in_c)
+        # inputs: (B,v_i,in_c)
+        # Linear layer weights: (v_i,c_i,in_c)
+        # -> (B,v_i,c_i) weights for SDF NN
         self.params_proj = ChannelsParamsProj(
             device=device,
             param_shapes=self.param_shapes,
-            d_latent=self.latent_d,
+            d_latent=self.in_c,
             learned_scale=learned_scale,
             use_ln=use_ln,
         )
         self.nn_layers = nn.ModuleList()
-        c_i = latent_d//4
+        c_i = weight_shapes[-1][0]
         for ls in d_hidden_sdfnn:
             self.nn_layers.append(nn.Linear(c_i, ls))
             self.nn_layers.append(nn.SiLU())
@@ -96,7 +102,9 @@ def GeoEncoderModelDefinition(out_c=128, latent_d=128,
                               num_heads=4, cross_attn_layers=1,
                               self_attn_layers=3,
                               pc_padding_val: Optional[int] = None,
-                              d_hidden_sdfnn=[128, 128]):
+                              d_hidden_sdfnn=[128, 128],
+                              latent_d_sdfnn=128,
+                              in_c_sdfnn=128):
 
     geo_encoder = PointCloudPerceiverChannelsEncoder(
         input_channels=2, out_c=out_c, width=width,
@@ -104,7 +112,8 @@ def GeoEncoderModelDefinition(out_c=128, latent_d=128,
         radius=radius, d_hidden=d_hidden, fps_method=fps_method,
         num_heads=num_heads, cross_attn_layers=cross_attn_layers,
         self_attn_layers=self_attn_layers, pc_padding_val=pc_padding_val)
-    sdf_NN = implicit_sdf(latent_d=latent_d, d_hidden_sdfnn=d_hidden_sdfnn)
+    sdf_NN = implicit_sdf(latent_d=latent_d_sdfnn, in_c=in_c_sdfnn,
+                          d_hidden_sdfnn=d_hidden_sdfnn)
     tot_num_params = sum(p.numel() for p in geo_encoder.parameters())
     trainable_params = sum(p.numel()
                            for p in geo_encoder.parameters() if p.requires_grad)
@@ -141,7 +150,7 @@ def EvaluateGeoEncoderModel(trainer, test_loader, grid_coor, sdf_inv_scaler):
 def TrainGeoEncoderModel(geo_encoder, sdf_NN, filebase, train_flag, epochs=300, lr=1e-3):
 
     train_dataset, test_dataset, grid_coor, sdf_inv_scaler, stress_inv_scaler = LoadData(
-        seed=42)
+        seed=42, geoencoder=True)
     train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False)
     grid_coor = grid_coor.to(device)

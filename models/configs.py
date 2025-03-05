@@ -17,9 +17,9 @@ data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DRe
 data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift8_0-10000_aug.pkl"
 
 
-POINTS_CLOUD_PADDING_VALUE = -10
+POINTS_CLOUD_PADDING_VALUE = 1000
 NUM_POINT_POINTNET2 = 128
-NX_GRID = 64
+NX_GRID = 120
 
 
 def GetGridPoints(nx):
@@ -101,6 +101,8 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
         "self_attn_layers": 3,
         "pc_padding_val": POINTS_CLOUD_PADDING_VALUE,
         "d_hidden_sdfnn": [128, 128],
+        "latent_d_sdfnn": latent_d,
+        "in_c_sdfnn": out_c,
         "fps_method": fps_method,
     }
     geo_encoder_file_base = f"{script_path}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}_fps{fps_method}"

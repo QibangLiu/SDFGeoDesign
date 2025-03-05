@@ -19,7 +19,7 @@ import argparse
 from typing import List, Optional, Tuple, Union
 from models.modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
 from models.modules.point_encoding import PointSetEmbedding, SimplePerceiver
-from models.modules.transformer import Transformer
+from models.modules.transformer import SelfAttentionBlocks
 from models.modules.params_proj import ChannelsParamsProj
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -187,7 +187,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
         self.encoder = SimplePerceiver(
             width=self.width, heads=num_heads, layers=cross_attn_layers)
 
-        self.processor = Transformer(
+        self.processor = SelfAttentionBlocks(
             width=self.width, heads=num_heads, layers=self_attn_layers)
         self.output_proj = nn.Linear(
             self.width, self.out_c)

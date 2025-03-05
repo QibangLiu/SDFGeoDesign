@@ -19,7 +19,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .transformer import ResidualCrossAttentionBlock, Transformer
+from .transformer import ResidualCrossAttentionBlock, SelfAttentionBlocks
 from . import pointnet2_utils as pnet
 from .point_position_embedding import PosEmbLinear
 import warnings
@@ -280,7 +280,7 @@ class PointCloudPerceiverChannelsEncoder(nn.Module):
 
         self.encoder = SimplePerceiver(
             width=self.width, heads=num_heads, layers=cross_attn_layers, dropout=dropout)
-        self.processor = Transformer(
+        self.processor = SelfAttentionBlocks(
             width=self.width, heads=num_heads, layers=self_attn_layers, dropout=dropout)
         self.output_proj = nn.Linear(
             self.width, self.out_c)
