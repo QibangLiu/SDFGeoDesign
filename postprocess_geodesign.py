@@ -1,8 +1,8 @@
 # %%
 from scipy.optimize import fsolve
 import os
-from models.forward import LoadForwardModel
-from models.configs import models_configs, LoadData
+from models import NOT_SS
+from models import configs
 from models.inverse_diffusion_from_sdf import LoadDiffusionInverseModel
 from utils.sdf2geo import filter_out_unit_cell
 from utils.run_abaqus import run_abaqus_sim
@@ -15,26 +15,27 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # TODO: change to your abaqus path, set None if you don't have abaqus
 ABAQUS_EXE = "/projects/bbkg/Abaqus/2024/Commands/abaqus"
 # %%
-configs = models_configs()
-fwd_filebase = configs["ForwardModel"]["filebase"]
-fwd_args = configs["ForwardModel"]["model_args"]
-geoencoder_args = configs["GeoEncoder"]["model_args"]
-inv_filebase = configs["InvDiffusion"]["filebase"]
-inv_args = configs["InvDiffusion"]["model_args"]
+inv_config = configs.INV_configs()
+inv_filebase = inv_config["filebase"]
+inv_args = inv_config["model_args"]
+fwd_config = configs.NOTSS_configs()
+fwd_filebase = fwd_config["filebase"]
+fwd_args = fwd_config["model_args"]
 
 inv_Unet, gaussian_diffusion = LoadDiffusionInverseModel(
     inv_filebase, inv_args)
-fwd = LoadForwardModel(fwd_filebase, fwd_args, geoencoder_args)
+fwd = NOT_SS.LoadNOTModel(fwd_filebase, fwd_args)
 
 # %%
-train_dataset, test_dataset, grid_coor, sdf_inv_scaler, stress_inv_scaler = LoadData(
-    seed=420)
-
-
+train_dataset, test_dataset, sdf_inv_scaler, stress_inv_scaler = configs.LoadDataInv()
+strain = torch.tensor(np.linspace(0, 1, 51), dtype=torch.float32)
+strain = strain[:, None].to(device)
 # %%
 
-def inv_diffusion(Ytarget, num_sol=100, seed=None, w=2):
+
+def inv_diffusion(Ytarget, fwd=fwd, num_sol=100, seed=None, w=2):
     # Ytarget = test_dataset[testID][1].unsqueeze(0)
+    start = time.time()
     Ytarget = Ytarget.to(device)
     labels = Ytarget.repeat(num_sol, 1)
     sdf = gaussian_diffusion.sample(
@@ -42,22 +43,21 @@ def inv_diffusion(Ytarget, num_sol=100, seed=None, w=2):
     )
     sdf = torch.tensor(sdf).to(device)
     with torch.no_grad():
-        Ypred = fwd.forward_from_sdf(sdf)
+        Ypred = fwd(strain, sdf)
     Ypred_inv = stress_inv_scaler(Ypred.cpu().detach().numpy())
     Ytarg_inv = stress_inv_scaler(labels.cpu().detach().numpy())
-    Xpred_inv = sdf_inv_scaler(sdf.cpu().detach().numpy())
-    Xpred_inv = Xpred_inv.squeeze()
-    return Xpred_inv, Ypred_inv, Ytarg_inv
+    Xpred = sdf.cpu().detach().numpy()
+    end = time.time()
+    print(f"Time taken for {num_sol} solutions: {end-start}")
+    return Xpred, Ypred_inv, Ytarg_inv
 
 # %%
 
 
-def design_test(Ytarget, filebase, num_sol=100, seed=None, w=2, threshold=0.05, abaqus_exe=ABAQUS_EXE, overwrite=False):
-    start = time.time()
-    Xpred_inv, Ypred_inv, Ytarg_inv = inv_diffusion(
-        Ytarget, num_sol=num_sol, seed=seed, w=w)
-    end = time.time()
-    print(f"Time taken for {num_sol} solutions: {end-start}")
+def design_perform(design_results, filebase, seed=None, threshold=0.05, abaqus_exe=ABAQUS_EXE, overwrite=False):
+    Xpred, Ypred_inv, Ytarg_inv = design_results
+    Xpred_inv = sdf_inv_scaler(Xpred)
+    Xpred_inv = Xpred_inv.squeeze()
     """evaluate the  accuracy design results by forward model"""
 
     L2error = np.linalg.norm(Ypred_inv - Ytarg_inv, axis=1) / \
@@ -74,6 +74,7 @@ def design_test(Ytarget, filebase, num_sol=100, seed=None, w=2, threshold=0.05, 
     geo_contours, periodic_ids = filter_out_unit_cell(
         Xpred_inv)
     Ypred_inv = Ypred_inv[periodic_ids]
+    X_pred = Xpred[periodic_ids]
     Ytarg_inv = Ytarg_inv[periodic_ids]
     L2error = L2error[periodic_ids]
     if threshold is not None:
@@ -92,7 +93,7 @@ def design_test(Ytarget, filebase, num_sol=100, seed=None, w=2, threshold=0.05, 
         print(f"Running Abaqus simulation for case {cases[i]}")
         working_dir = os.path.join(filebase, cases[i])
         femdata = run_abaqus_sim(
-            geo_contours[evl_ids[i]], working_dir, abaqus_exe, overwrite=overwrite)
+            geo_contours[evl_ids[i]], working_dir, abaqus_exe, sdf_norm=X_pred[evl_ids[i]], overwrite=overwrite)
         fem_stress.append(femdata[:, 1])
     fem_stress = np.array(fem_stress)
     """plot the results"""
@@ -143,7 +144,7 @@ def design_test(Ytarget, filebase, num_sol=100, seed=None, w=2, threshold=0.05, 
 # good: 37388 \/ 55161,71114
 # not bad: 3653,16681,79017,18765
 seed = np.random.randint(0, 100000)  # 54010
-seed = 55161
+seed = 37388
 print(f"Random seed: {seed}")
 np.random.seed(seed)
 testID = np.random.randint(0, len(test_dataset))
@@ -151,8 +152,9 @@ print(f"Test ID: {testID}")
 seed_ = np.random.randint(0, 100000)
 Ytarget = test_dataset[testID][1].unsqueeze(0)
 filebase = f"./abaqus_sims/testID{testID}"
-geo_contours, Ypred, Ytarg = design_test(
-    Ytarget, filebase, num_sol=200, threshold=0.05, w=2, seed=seed_, overwrite=True)
+design_results = inv_diffusion(Ytarget, num_sol=200, seed=seed_, w=10)
+geo_contours, Ypred, Ytarg = design_perform(
+    design_results, filebase, threshold=None,  seed=seed_, overwrite=True)
 
 # %%
 # Ondemand desgin
@@ -188,7 +190,7 @@ s_scale = stress_inv_scaler(1)-s_shift
 # %%
 # Material properties
 E = 800     # Young's modulus (MPa)
-sigma_0 = 20  # Reference yield stress (Pa)
+sigma_0 = 30  # Reference yield stress (Pa)
 alpha = 0.002   # Coefficient
 n = 10           # Hardening exponent
 y_demand1 = ondemand_target(E, sigma_0, alpha, n)
@@ -196,13 +198,13 @@ y_demand_target1 = (y_demand1-s_shift)/s_scale
 y_demand_target1 = torch.tensor(y_demand_target1)[None, :].to(device)
 filebase = f"./abaqus_sims/ondemand_case1"
 # seed = np.random.randint(0, 100000)  # 54010
-seed = 42  # 42  # 39157
+seed = 420  # 42  # 39157
 np.random.seed(seed)
 print(f"Random seed: {seed}")
 seed_ = np.random.randint(0, 100000)
-geo_contours, Ypred, Ytarg = design_test(
-    y_demand_target1, filebase, num_sol=500, threshold=None, w=2, seed=seed_, overwrite=True)
-
+design_results = inv_diffusion(y_demand_target1, num_sol=500, seed=seed_, w=10)
+geo_contours, Ypred, Ytarg = design_perform(
+    design_results, filebase, threshold=None,  seed=seed_, overwrite=True)
 # %%
 # Material properties
 E = 1000     # Young's modulus (MPa)

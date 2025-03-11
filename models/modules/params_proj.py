@@ -52,21 +52,14 @@ class ChannelsProj(nn.Module):
         vectors: int,
         channels: int,
         d_latent: int,
-        learned_scale: Optional[float] = None,
         use_ln: bool = False,
     ):
         super().__init__()
         self.proj = nn.Linear(d_latent, vectors * channels, device=device)
         self.use_ln = use_ln
-        self.learned_scale = learned_scale
         if use_ln:
             self.norm = nn.LayerNorm(
                 normalized_shape=(channels,), device=device)
-            if learned_scale is not None:
-                self.norm.weight.data.fill_(learned_scale)
-        elif learned_scale is not None:
-            gain = torch.ones((channels,), device=device) * learned_scale
-            self.register_parameter("gain", nn.Parameter(gain))
         self.d_latent = d_latent
         self.vectors = vectors
         self.channels = channels
@@ -79,8 +72,6 @@ class ChannelsProj(nn.Module):
         h = torch.einsum("bvd,vcd->bvc", x_bvd, w_vcd)
         if self.use_ln:
             h = self.norm(h)
-        elif self.learned_scale is not None:
-            h = h * self.gain.view(1, 1, -1)
         h = h + b_vc
         return h
 
@@ -92,7 +83,6 @@ class ChannelsParamsProj(ParamsProj):
         device: torch.device,
         param_shapes: Dict[str, Tuple[int]],
         d_latent: int,
-        learned_scale: Optional[float] = None,
         use_ln: bool = False,
     ):
         super().__init__(device=device, param_shapes=param_shapes, d_latent=d_latent)
@@ -100,7 +90,6 @@ class ChannelsParamsProj(ParamsProj):
         self.projections = nn.ModuleDict({})
         # it seems self.flat_shapes= self.param_shapes, but in numpy
         self.flat_shapes = flatten_param_shapes(param_shapes)
-        self.learned_scale = learned_scale
         self.use_ln = use_ln
         for k, (vectors, channels) in self.flat_shapes.items():
             self.projections[_sanitize_name(k)] = ChannelsProj(
@@ -108,7 +97,6 @@ class ChannelsParamsProj(ParamsProj):
                 vectors=vectors,
                 channels=channels,
                 d_latent=d_latent,
-                learned_scale=learned_scale,
                 use_ln=use_ln,
             )
 

@@ -79,7 +79,7 @@ def write_geo_file(geo_contours, working_dir):
 
 
 # %%
-def run_abaqus_sim(geo_contours, working_dir, abaqus_exe=None, overwrite=False):
+def run_abaqus_sim(geo_contours, working_dir, abaqus_exe=None, sdf_norm=None, overwrite=False):
     """
     Args:
         geo_contours: tuple, (shell_contours, hole_contours)
@@ -91,6 +91,7 @@ def run_abaqus_sim(geo_contours, working_dir, abaqus_exe=None, overwrite=False):
     """
 
     os.makedirs(working_dir, exist_ok=True)
+    np.save(os.path.join(working_dir, "sdf_norm.npy"), sdf_norm)
     prev_dir = os.getcwd()
     ss_file = os.path.join(working_dir, 'stress_strain.csv')
     if os.path.exists(ss_file) and not overwrite:

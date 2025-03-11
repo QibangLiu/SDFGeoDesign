@@ -17,6 +17,7 @@ from odbAccess import *
 import os
 import numpy as np
 import json
+from collections import defaultdict
 
 # %%
 
@@ -351,3 +352,81 @@ his_strain /= num_nodes
 stress_strain_curve = np.stack((-his_strain[:-1], -his_stress[:-1]), axis=1)
 np.savetxt(os.path.join('./', 'stress_strain.csv'), stress_strain_curve,
            delimiter=',', comments='', header='strain,stress')
+
+
+# %%
+def extract_nodal_mises_stress(step):
+    num_steps = len(step.frames)
+    averaged_mises_allframes = []
+    for ith in range(1, num_steps-1):
+        frame = step.frames[ith]
+        stress_field = frame.fieldOutputs['S']
+        mises_field = stress_field.getScalarField(
+            invariant=MISES)  # Von Mises stress
+        element_nodal_mises = mises_field.getSubset(position=ELEMENT_NODAL)
+        # Use defaultdict for efficient accumulation
+        mises_sum = defaultdict(float)  # Sum of von Mises stress for each node
+        count = defaultdict(int)        # Count of contributions for each node
+        # Accumulate von Mises stress and counts
+        for value in element_nodal_mises.values:
+            node_label = value.nodeLabel
+            mises_sum[node_label] += value.data  # Add the von Mises stress
+            # Increment the contribution count
+            count[node_label] += 1
+        # Compute averaged von Mises stresses
+        sorted_node_labels = sorted(mises_sum.keys())
+        averaged_mises_frame = np.array(
+            [mises_sum[node_label] / count[node_label] for node_label in sorted_node_labels])
+        averaged_mises_allframes.append(averaged_mises_frame)
+    averaged_mises_allframes = np.array(averaged_mises_allframes)
+    np.save('mises_stress.npy', averaged_mises_allframes)
+
+
+def extract_nodal_disp(step):
+    num_steps = len(step.frames)
+    Uxy_allframes = []
+    for ith in range(1, num_steps-1):
+        frame = step.frames[ith]
+        disp_field = frame.fieldOutputs['U']
+        Uxy = []
+        for value in disp_field.values:
+            Uxy.append(value.data)
+        Uxy = np.array(Uxy)
+        Uxy_allframes.append(Uxy)
+    Uxy_allframes = np.array(Uxy_allframes)
+    np.save('displacement.npy', Uxy_allframes)
+
+
+def extract_mesh_data(assembly):
+    instance = assembly.instances["UC_ASSEM"]
+    nodes_coords = []
+    for node in instance.nodes:
+        nodes_coords.append(node.coordinates)
+    nodes_coords = np.array(nodes_coords)
+    elements_connectivity = []
+    for element in instance.elements:
+        conne = list(element.connectivity)
+        last_node = conne[-1]
+        conne.append(last_node)
+        elements_connectivity.append(conne[:4])
+    elements_connectivity = np.array(elements_connectivity, dtype=np.int32)
+    mesh_data = {
+        'nodes_coords': nodes_coords,
+        'elements_connectivity': elements_connectivity
+    }
+    np.savez('mesh_data.npz', **mesh_data)
+
+
+def get_fieldData(odb):
+    job_name = 'MyJob.odb'
+    # access .odb
+    step = odb.steps.values()[0]
+    assembly = odb.rootAssembly
+    extract_nodal_mises_stress(step)
+    extract_nodal_disp(step)
+    extract_mesh_data(assembly)
+    # odb.close()
+
+
+get_fieldData(odb)
+odb.close()

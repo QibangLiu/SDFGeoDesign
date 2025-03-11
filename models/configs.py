@@ -4,11 +4,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import TensorDataset, DataLoader, Dataset
+from typing import Union
 import os
 import pickle
 from sklearn.model_selection import train_test_split
-
+import time
 # %%
 
 script_path = os.path.dirname(os.path.abspath(__file__))
@@ -17,127 +18,311 @@ data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DRe
 data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift8_0-10000_aug.pkl"
 
 
-POINTS_CLOUD_PADDING_VALUE = 1000
-NUM_POINT_POINTNET2 = 128
-NX_GRID = 120
+PADDING_VALUE = -1000
+# %%
 
 
-def GetGridPoints(nx):
-    x_g = np.linspace(-0.1, 1.1, nx, dtype=np.float32)
-    X_g, Y_g = np.meshgrid(x_g, x_g)
-    grid_points = np.vstack([X_g.ravel(), Y_g.ravel()]).T
-    return grid_points
+class ListDataset(Dataset):
+    """for list of tensors"""
+
+    def __init__(self, data: Union[list, tuple]):
+        """
+        args:
+            data: list of data, each element is a list of tensors
+            e.g. [(pc1, xyt1, S1), (pc2, xyt2, S2), ...]
+
+        """
+        self.data = data
+
+    def __len__(self):
+        return len(self.data[0])
+
+    def __getitem__(self, idx):
+        one_data = [d[idx] for d in self.data]
+        return one_data
+# %%
 
 
-def LoadData(data_file=data_file, test_size=0.2, seed=42, geoencoder=False):
+def LoadDataSS(test_size=0.2, seed=42):
+    data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/pc_sdf_ss_12-92_shift8_0-10000_aug.pkl"
     with open(data_file, "rb") as f:
         data = pickle.load(f)
     sdf = data["sdf"].astype(np.float32)
     stress = data["stress"].astype(np.float32)
-    point_cloud = data["points_cloud"]
-    x_grids = data['x_grids'].astype(np.float32)
-    y_grids = data['y_grids'].astype(np.float32)
-
     sdf = sdf.reshape(-1, 120 * 120)
     sdf_shift, sdf_scale = np.mean(sdf), np.std(sdf)
     sdf_norm = (sdf - sdf_shift) / sdf_scale
-    # sdf_norm = sdf_norm.reshape(-1, 1, 120, 120)
+    sdf_norm = sdf_norm.reshape(-1, 1, 120, 120)
     stress_shift, stress_scale = np.mean(stress), np.std(stress)
     stress_norm = (stress - stress_shift) / stress_scale
 
-    point_cloud = [torch.tensor(x[:, :2], dtype=torch.float32)
-                   for x in point_cloud]  # (Nb,N,3)->(Nb, N, 2)
-    num_p = [x.shape[0] for x in point_cloud]
-    if min(num_p) < NUM_POINT_POINTNET2:
-        raise ValueError(
-            f"Number of sample points {NUM_POINT_POINTNET2}\
-            should be smaller than the minimum number of points in the point cloud {min(num_p)}")
-    point_cloud = pad_sequence(
-        point_cloud, batch_first=True, padding_value=POINTS_CLOUD_PADDING_VALUE)
-    sdf_norm = torch.tensor(sdf_norm)
-    stress_norm = torch.tensor(stress_norm)
-    sdf_train, sdf_test, stress_train, stress_test, pc_train, pc_test = train_test_split(
-        sdf_norm, stress_norm, point_cloud, test_size=test_size, random_state=seed
-    )
-    train_dataset = TensorDataset(
-        pc_train, stress_train, sdf_train)
-    test_dataset = TensorDataset(pc_test, stress_test, sdf_test)
-    if geoencoder:
-        grid_coor = np.vstack([x_grids.ravel(), y_grids.ravel()]).T
-    else:
-        grid_coor = GetGridPoints(NX_GRID)
-    # grid_coor = np.vstack([x_grids.ravel(), y_grids.ravel()]).T
-    grid_coor = torch.tensor(grid_coor)
-
-    def y_inv_trans(y):
+    def s_inv_trans(y):
        return y * stress_scale + stress_shift
 
-    def x_inv_trans(x):
+    def sdf_inv_trans(x):
         return (x * sdf_scale + sdf_shift)
 
-    sdf_inv_scaler = x_inv_trans
-    stress_inv_scaler = y_inv_trans
+    sdf_norm = torch.tensor(sdf_norm)
+    stress_norm = torch.tensor(stress_norm)
+    sdf_train, sdf_test, stress_train, stress_test = train_test_split(
+        sdf_norm, stress_norm, test_size=test_size, random_state=seed
+    )
+    train_dataset = TensorDataset(
+        sdf_train, stress_train)
+    test_dataset = TensorDataset(sdf_test, stress_test)
+    sdf_inv_scaler = sdf_inv_trans
+    stress_inv_scaler = s_inv_trans
 
-    return train_dataset, test_dataset, grid_coor, sdf_inv_scaler, stress_inv_scaler
+    strain = torch.tensor(np.linspace(0, 1, 51), dtype=torch.float32)
+
+    return train_dataset, test_dataset, strain[:, None], sdf_inv_scaler, stress_inv_scaler
+
+
+def NOTSS_configs():
+    file_base = f"{script_path}/saved_weights/NOTSS_test"
+    notss_args = {"img_shape": (1, 120, 120),
+                  "channel_mutipliers": [1, 2, 4, 8],
+                  "has_attention": [False, False, False, False],
+                  "first_conv_channels": 8, "num_res_blocks": 1,
+                  "norm_groups": 8, "dropout": None, "embed_dim": 64,
+                  "cross_attn_layers": 2, "num_heads": 8, "in_channels": 1, "out_channels": 1,
+                  "emd_version": "nerf"}
+
+    args_all = {"model_args": notss_args, "filebase": file_base}
+    return args_all
+
+
+def InfSS_configs(*args, **kwargs):
+    file_base = f"{script_path}/saved_weights/InfSS_test"
+    img_shape = (1, 120, 120)
+    channel_mutipliers = [1, 2, 4, 8]
+    has_attention = [False, False, False, False]
+    first_conv_channels = 8
+    num_res_blocks = 1
+    norm_groups = None
+    dropout = 0.0
+    latent_c = 128
+    encoder_args = {"img_shape": img_shape,
+                    "channel_mutipliers": channel_mutipliers,
+                    "has_attention": has_attention,
+                    "first_conv_channels": first_conv_channels,
+                    "num_res_blocks": num_res_blocks,
+                    "norm_groups": norm_groups,
+                    "dropout": dropout,
+                    "out_c": latent_c}
+    inf_ags = {**encoder_args, "latent_d": 120, "in_c": latent_c, "ndim": 1,
+               "d_hidden_sdfnn": [128, 128]}
+
+    args_all = {"model_args": inf_ags, "filebase": file_base}
+    return args_all
 
 
 # %%
+NUM_FRAMES = 26
 
 
-def models_configs(out_c=256, latent_d=256, *args, **kwargs):
-    """************GeoEncoder arguments************"""
+def LoadSUScaler():
+    scaler_file = f"/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/SU_scalers_{NUM_FRAMES}fram.npz"
+    scalers = np.load(scaler_file)
+    su_shift, su_scaler = scalers["global_shift"], scalers["global_scale"]
+    su_shift = torch.tensor(su_shift)[None, :]  # (1, 1,1,3)
+    su_scaler = torch.tensor(su_scaler)[None, :]  # (1, 1, 1, 3)
 
-    fps_method = "fps"
-    geo_encoder_model_args = {
-        "out_c": out_c,
-        "latent_d": latent_d,
-        "width": 128,
-        "n_point": NUM_POINT_POINTNET2,
-        "n_sample": 8,
-        "radius": 0.2,
-        "d_hidden": [128, 128],
-        "num_heads": 4,
-        "cross_attn_layers": 1,
-        "self_attn_layers": 3,
-        "pc_padding_val": POINTS_CLOUD_PADDING_VALUE,
-        "d_hidden_sdfnn": [128, 128],
-        "latent_d_sdfnn": latent_d,
-        "in_c_sdfnn": out_c,
-        "fps_method": fps_method,
-    }
-    geo_encoder_file_base = f"{script_path}/saved_weights/geoencoder_outc{out_c}_latentdim{latent_d}_fps{fps_method}"
-    geo_encoder_args = {
-        "model_args": geo_encoder_model_args,
-        "filebase": geo_encoder_file_base,
-    }
-    """************Forward model arguments************"""
-    img_shape = (1, out_c, latent_d)
+    def SUInverse(x):
+        su_sig = su_scaler.to(x.device)
+        su_mu = su_shift.to(x.device)
+        return x*su_sig+su_mu
+    return SUInverse
+
+
+def LoadDataSU(bs_train=32, bs_test=128, test_size=0.2, seed=42, padding_value=PADDING_VALUE, input_T=True):
+    start = time.time()
+    data_file = f"/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/node_pc_sdf_mises_disp{NUM_FRAMES}fram_aug.pkl"
+    scaler_file = f"/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/SU_scalers_{NUM_FRAMES}fram.npz"
+    with open(data_file, "rb") as f:
+        data = pickle.load(f)
+    su_scalers = np.load(scaler_file)
+    su_shift, su_scaler = su_scalers["global_shift"], su_scalers["global_scale"]
+    SU = data["mises_disp"]
+    nodes = data["mesh_coords"]
+    sdf = data["sdf"]
+    Nt = SU[0].shape[1]
+    t = torch.tensor(np.linspace(0, 1, Nt, dtype=np.float32))  # t is strain
+    t = t[None, :, None]  # (1, Nt, 1)
+
+    SU = [torch.tensor((su-su_shift)/su_scaler) for su in SU]  # (Nb, N,Nt, 3)
+
+    if input_T:
+        xyt = [torch.cat((torch.tensor(x[:, None, :2]).repeat(
+            1, Nt, 1), t.repeat(x.shape[0], 1, 1)), dim=-1) for x in nodes]  # (Nb, N, Nt, 3)
+    else:
+        xyt = [torch.tensor(x[:, :2]) for x in nodes]
+    sdf = sdf.reshape(-1, 120 * 120)
+    sdf_shift, sdf_scale = np.mean(sdf), np.std(sdf)
+    sdf = (sdf - sdf_shift) / sdf_scale
+    sdf = sdf.reshape(-1, 1, 120, 120)
+    sdf = torch.tensor(sdf)
+
+    train_ids, test_ids = train_test_split(
+        np.arange(len(sdf)), test_size=test_size, random_state=seed)
+
+    train_xyt = [xyt[i] for i in train_ids]
+    test_xyt = [xyt[i] for i in test_ids]
+    train_S = [SU[i] for i in train_ids]
+    test_S = [SU[i] for i in test_ids]
+    train_sdf = sdf[train_ids]
+    test_sdf = sdf[test_ids]
+
+    train_dataset = ListDataset(
+        (train_sdf, train_xyt, train_S, torch.tensor(train_ids)))
+    test_dataset = ListDataset(
+        (test_sdf, test_xyt, test_S, torch.tensor(test_ids)))
+
+    def pad_collate_fn(batch):
+        # Extract sdf (same-length)
+        sdf_batch = torch.stack([item[0] for item in batch])
+        xyt_batch = [item[1]
+                     for item in batch]  # Extract xyt (variable-length)
+        SU = [item[2] for item in batch]  # Extract S (variable-length)
+        sample_ids = torch.stack([item[3] for item in batch])
+        # y_batch = torch.stack([item[1] for item in batch])  # Extract and stack y (fixed-length)
+        # Pad sequences
+        xyt_padded = pad_sequence(
+            xyt_batch, batch_first=True, padding_value=padding_value)
+        SU_padded = pad_sequence(SU, batch_first=True,
+                                 padding_value=padding_value)
+        return sdf_batch, xyt_padded, SU_padded, sample_ids
+
+    train_dataloader = DataLoader(train_dataset, batch_size=bs_train, shuffle=True,
+                                  collate_fn=pad_collate_fn)
+    test_dataloader = DataLoader(test_dataset, batch_size=bs_test, shuffle=False,
+                                 collate_fn=pad_collate_fn)
+    su_shift = torch.tensor(su_shift)[None, :]  # (1, 1,1,3)
+    su_scaler = torch.tensor(su_scaler)[None, :]  # (1, 1, 1, 3)
+
+    def SUInverse(x):
+        su_sig = su_scaler.to(x.device)
+        su_mu = su_shift.to(x.device)
+        return x*su_sig+su_mu
+
+    def sdf_inv_trans(x):
+        return (x * sdf_scale + sdf_shift)
+    sdf_inv_scaler = sdf_inv_trans
+    su_inv_scaler = SUInverse
+
+    print(f"Data loading time: {time.time()-start:.2f} s")
+
+    return train_dataloader, test_dataloader, sdf_inv_scaler, su_inv_scaler
+
+
+def LoadCells():
+    mesh_file = "/work/nvme/bbka/qibang/repository_WNbbka/GINTO_data/microstruc/mesh_pc.pkl"
+    with open(os.path.join(mesh_file), "rb") as f:
+        data_mesh = pickle.load(f)
+        cells = data_mesh['mesh_connect']
+    return cells
+
+
+def InfSU_configs(*args, **kwargs):
+    file_base = f"{script_path}/saved_weights/InfSU_test"
+    img_shape = (1, 120, 120)
     channel_mutipliers = [1, 2, 4, 8]
-    has_attention = [False, False, True, True]
-    first_conv_channels = 16
+    has_attention = [False, False, False, False]
+    first_conv_channels = 8
     num_res_blocks = 1
     norm_groups = None
-    dropout = 0.1
-
-    if "forward_from_pc" in kwargs and kwargs["forward_from_pc"] == True:
-        fwd_filebase = f"{script_path}/saved_weights/fwd_fromPC_outc{out_c}_latentdim{latent_d}_noatt"
-        fwd_img_shape = img_shape
-    elif "forward_from_latent" in kwargs and kwargs["forward_from_latent"] == True:
-        fwd_filebase = f"{script_path}/saved_weights/fwd_fromLatent_outc{out_c}_latentdim{latent_d}_noatt"
-        fwd_img_shape = img_shape
-    else:
-        fwd_filebase = f"{script_path}/saved_weights/fwd_outc{out_c}_latentdim{latent_d}_noatt_normgroups-{norm_groups}_dropout-{dropout}_nx{NX_GRID}"
-        fwd_img_shape = (1, NX_GRID, NX_GRID)
-
-    fwd_model_args = {"img_shape": fwd_img_shape,
+    dropout = 0.0
+    latent_c = 128
+    encoder_args = {"img_shape": img_shape,
                         "channel_mutipliers": channel_mutipliers,
                         "has_attention": has_attention,
                         "first_conv_channels": first_conv_channels,
                         "num_res_blocks": num_res_blocks,
                         "norm_groups": norm_groups,
-                        "dropout": dropout}
-    fwd_args = {"model_args": fwd_model_args, "filebase": fwd_filebase}
+                        "dropout": dropout,
+                        "out_c": latent_c}
+    inf_ags = {**encoder_args, "latent_d": 120, "in_c": latent_c, "ndim": 3, "out_d": 3,
+               "d_hidden_sdfnn": [128, 128], "padding_value": PADDING_VALUE}
 
+    args_all = {"model_args": inf_ags, "filebase": file_base}
+    return args_all
+
+
+def NOTSU_configs(input_T=True):
+    if input_T:
+        file_base = f"{script_path}/saved_weights/NOTSU_test"
+        notsu_args = {"img_shape": (1, 120, 120),
+                      "channel_mutipliers": [1, 2, 4, 8],
+                      "has_attention": [False, False, False, False],
+                      "first_conv_channels": 8, "num_res_blocks": 1,
+                      "norm_groups": 8, "dropout": None, "embed_dim": 64,
+                      "cross_attn_layers": 2, "num_heads": 8, "in_channels": 3, "out_channels": 3,
+                      "emd_version": "nerf",
+                      "padding_value": PADDING_VALUE}
+    else:
+        # file_base = f"{script_path}/saved_weights/NOTSU_noinpT_frame_scaler_test"
+        file_base = f"{script_path}/saved_weights/NOTSU_noinpT_test"
+        notsu_args = {"img_shape": (1, 120, 120),
+                      "channel_mutipliers": [1, 2, 4, 8],
+                      "has_attention": [False, False, False, False],
+                      "first_conv_channels": 8, "num_res_blocks": 1,
+                      "norm_groups": 8, "dropout": None, "embed_dim": 64,
+                      "cross_attn_layers": 2, "num_heads": 8, "in_channels": 2, "out_channels": 3,
+                      "emd_version": "nerf",
+                      "padding_value": PADDING_VALUE, "num_frames": NUM_FRAMES}
+    args_all = {"model_args": notsu_args, "filebase": file_base}
+    return args_all
+
+
+def DeepONetSU_configs():
+    file_base = f"{script_path}/saved_weights/DeepONetSU_test"
+
+    don_args = {"layer_sizes_branch": [120*120, 64, 256, 256, 128, 128],
+                "layer_sizes_trunk": [3, 256, 256, 256, 128, 128],
+                "d_hidden": [128, 128],
+                "out_d": 3,
+                "emd_version": "nerf",
+                "padding_value": PADDING_VALUE}
+    args_all = {"model_args": don_args, "filebase": file_base}
+    return args_all
+
+# %%
+
+
+def LoadDataInv(test_size=0.2, seed=420):
+    data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/pc_sdf_ss_12-92_shift8_0-10000_aug.pkl"
+    with open(data_file, "rb") as f:
+        data = pickle.load(f)
+    sdf = data["sdf"].astype(np.float32)
+    stress = data["stress"].astype(np.float32)
+    sdf = sdf.reshape(-1, 120 * 120)
+    sdf_shift, sdf_scale = np.mean(sdf), np.std(sdf)
+    sdf_norm = (sdf - sdf_shift) / sdf_scale
+    sdf_norm = sdf_norm.reshape(-1, 1, 120, 120)
+    stress_shift, stress_scale = np.mean(stress), np.std(stress)
+    stress_norm = (stress - stress_shift) / stress_scale
+
+    def s_inv_trans(y):
+       return y * stress_scale + stress_shift
+
+    def sdf_inv_trans(x):
+        return (x * sdf_scale + sdf_shift)
+
+    sdf_norm = torch.tensor(sdf_norm)
+    stress_norm = torch.tensor(stress_norm)
+    sdf_train, sdf_test, stress_train, stress_test = train_test_split(
+        sdf_norm, stress_norm, test_size=test_size, random_state=seed
+    )
+    train_dataset = TensorDataset(
+        sdf_train, stress_train)
+    test_dataset = TensorDataset(sdf_test, stress_test)
+    sdf_inv_scaler = sdf_inv_trans
+    stress_inv_scaler = s_inv_trans
+
+    return train_dataset, test_dataset, sdf_inv_scaler, stress_inv_scaler
+
+
+def INV_configs():
     """************Inverse diffusion model arguments************"""
     channel_multpliers = [1, 2, 4, 8]
     fist_conv_channels = 16
@@ -146,15 +331,10 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
     num_res_blocks = 1
     total_timesteps = 500
     dropout = None
-    if "diffusion_from_lattent" in kwargs and kwargs["diffusion_from_lattent"] == True:
-        inv_img_shape = img_shape
-        inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_from_lattent_outc{out_c}_latentdim{latent_d}"
-        has_attention = [False, False, False, True]
 
-    else:
-        inv_img_shape = (1, NX_GRID, NX_GRID)
-        has_attention = [False, False, True, True]
-        inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_outc{out_c}_latentdim{latent_d}_dropout{dropout}_nx{NX_GRID}"
+    inv_img_shape = (1, 120, 120)
+    has_attention = [False, False, True, True]
+    inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_test"
     inv_diffusion_model_args = {"img_shape": inv_img_shape, "channel_multpliers": channel_multpliers,
                                   "has_attention": has_attention, "fist_conv_channels": fist_conv_channels,
                                   "num_heads": num_heads, "norm_groups": norm_groups, "num_res_blocks": num_res_blocks,
@@ -162,6 +342,4 @@ def models_configs(out_c=256, latent_d=256, *args, **kwargs):
     inv_diffusion_args = {
         "model_args": inv_diffusion_model_args, "filebase": inv_diffusion_filebase}
 
-    args_all = {"GeoEncoder": geo_encoder_args,
-                "ForwardModel": fwd_args, "InvDiffusion": inv_diffusion_args}
-    return args_all
+    return inv_diffusion_args

@@ -7,16 +7,14 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 if __package__:
-    from .geoencoder import LoadGeoEncoderModel
-    from .forward import LoadForwardModel
-    from .configs import models_configs, LoadData
+    from .NOT_SS import LoadNOTModel
+    from . import configs
     from .modules.UNets import UNet, UNetTimeStep
     from .modules.diffusion import GaussianDiffusion
     from .trainer import torch_trainer
 else:
-    from geoencoder import LoadGeoEncoderModel
-    from forward import LoadForwardModel
-    from configs import models_configs, LoadData
+    from NOT_SS import LoadNOTModel
+    import configs
     from modules.UNets import UNet, UNetTimeStep
     from modules.diffusion import GaussianDiffusion
     from trainer import torch_trainer
@@ -57,35 +55,22 @@ def DiffusionInverseModelDefinition(img_shape=(1, 128, 128),
 
 
 def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion,
-                               geo_encoder, sdf_NN, grid_coor,
                                filebase, train_flag, train_loader,
                                test_loader, epochs=300, lr=1e-3):
     total_timesteps = gaussian_diffusion.timesteps
 
     class TorchTrainer(torch_trainer.TorchTrainer):
-        def __init__(self, model, device, filebase, geo_encoder, sdf_NN):
+        def __init__(self, model, device, filebase):
             super().__init__(model, device, filebase)
-            self.geo_encoder = geo_encoder
-            for param in geo_encoder.parameters():
-                param.requires_grad = False
-            self.geo_encoder.eval()
-            self.sdf_NN = sdf_NN
-            for param in sdf_NN.parameters():
-                param.requires_grad = False
-            self.sdf_NN.eval()
 
         def evaluate_losses(self, data):
             '''custom loss'''
-            pc = data[0].to(self.device)
-            labels = data[1].to(self.device)
-            latent = self.geo_encoder(pc)
-            normalized_sdf = self.sdf_NN(grid_coor, latent)  # (B, N)
-            nx = int((grid_coor.shape[0])**0.5)
-            normalized_sdf = normalized_sdf.view(-1, 1, nx, nx)
-            batch_size = latent.shape[0]
+            labels = data[1].to(self.device)  # (B, 51)
+            normalized_sdf = data[0].to(self.device)  # (B, 1,120,120)
+            batch_size = normalized_sdf.shape[0]
             # random generate mask
             z_uncound = torch.rand(batch_size)
-            batch_mask = (z_uncound > 0.01).int().to(device)
+            batch_mask = (z_uncound > 0.1).int().to(device)
             # sample t uniformally for every example in the batch
             t = torch.randint(0, total_timesteps, (batch_size,),
                               device=device).long()
@@ -95,7 +80,7 @@ def TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion,
             loss_tracker = {"loss": loss.item()}
             return loss, loss_tracker
 
-    trainer = TorchTrainer(inv_Unet, device, filebase, geo_encoder, sdf_NN)
+    trainer = TorchTrainer(inv_Unet, device, filebase)
 
     checkpoint = torch_trainer.ModelCheckpoint(
         monitor="loss", save_best_only=True)
@@ -136,15 +121,17 @@ def LoadDiffusionInverseModel(file_base, model_args):
 
 def EvaluateDiffusionInverseModel(fwd_model, inv_Unet, gaussian_diffusion,
                                   Ytarget, sdf_inv_scaler, stress_inv_scaler,
-                                  num_sol=10, plot_flag=False):
+                                  num_sol=10):
     Ytarget = Ytarget.to(device)
     labels = Ytarget.repeat(num_sol, 1)
     sdf = gaussian_diffusion.sample(
-        inv_Unet, labels, w=2, clip_denoised=False
+        inv_Unet, labels, w=6, clip_denoised=False
     )
     sdf = torch.tensor(sdf).to(device)
+    strain = torch.tensor(np.linspace(0, 1, 51), dtype=torch.float32)
+    strain = strain[:, None].to(device)
     with torch.no_grad():
-        Ypred = fwd_model.forward_from_sdf(sdf)
+        Ypred = fwd_model(strain, sdf)
     Ypred_inv = stress_inv_scaler(Ypred.cpu().detach().numpy())
     Ytarg_inv = stress_inv_scaler(labels.cpu().detach().numpy())
     Xpred_inv = sdf_inv_scaler(sdf.cpu().detach().numpy())
@@ -162,89 +149,43 @@ def EvaluateDiffusionInverseModel(fwd_model, inv_Unet, gaussian_diffusion,
     for i, idx in enumerate(evl_ids):
         print(f"ID: {idx}, L2 error: {L2error[idx]}")
 
-    if plot_flag:
-        strain = np.linspace(0, 0.2, 51)
-        legends = ["best", "33\%", "66\%", "worst"]
-        fig = plt.figure(figsize=(4.8 * 5, 3.6))
-        ax = plt.subplot(1, 5, 1)
-        ax.plot(strain, Ytarg_inv[0], label="target")
-        for i, v in enumerate(evl_ids):
-            ax.plot(strain, Ypred_inv[v], label=legends[i])
-        ax.legend()
-        ax.set_xlabel(r"$\varepsilon~[\%]$")
-        ax.set_ylabel(r"$\sigma~[MPa]$")
-        for i, v in enumerate(evl_ids):
-            contours = measure.find_contours(
-                Xpred_inv[v], 0, positive_orientation="high")
-            ax = plt.subplot(1, 5, i + 2)
-            l_style = ["r-", "b--"]
-            holes = []
-            for j, contour in enumerate(contours):
-                contour = (contour - 10) / 100
-                x, y = contour[:, 1], contour[:, 0]
-                if j == 0:
-                    ax.fill(
-                        x,
-                        y,
-                        alpha=1.0,
-                        edgecolor="black",
-                        facecolor="cyan",
-                        label="Outer Boundary",
-                    )
-                else:
-                    ax.fill(x, y, alpha=1.0, edgecolor="black",
-                            facecolor="white", label="Hole")
-                # ax.grid(True)
-                ax.axis("off")
-                ax.axis("equal")  # Keep aspect ratio square
-
-
 # %%
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--train_flag", type=str, default="None")
-    parser.add_argument("--epochs", type=int, default=2)
+        "--train_flag", type=str, default="start")
+    parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     args, unknown = parser.parse_known_args()
     print(vars(args))
 
-    configs = models_configs()
-    filebase = configs["InvDiffusion"]["filebase"]
-    model_args = configs["InvDiffusion"]["model_args"]
-    geo_encoder_filebase = configs["GeoEncoder"]["filebase"]
-    geo_encoder_model_args = configs["GeoEncoder"]["model_args"]
-    fwd_filebase = configs["ForwardModel"]["filebase"]
-    fwd_model_args = configs["ForwardModel"]["model_args"]
+    inv_config = configs.INV_configs()
+    filebase = inv_config["filebase"]
+    model_args = inv_config["model_args"]
+    notss_config = configs.NOTSS_configs()
+    filebase_infss = notss_config["filebase"]
+    model_args_infss = notss_config["model_args"]
     print(f"\n\nInvDiffusion Filebase: {filebase}, model_args:")
     print(model_args)
-    print(f"\n\nGeoEncoder Filebase: {geo_encoder_filebase}, model_args:")
-    print(geo_encoder_model_args)
-    print(f"\n\nForwardModel Filebase: {fwd_filebase}, model_args:")
-    print(fwd_model_args)
+    print(f"\n\n NOT ForwardModel Filebase: {filebase_infss}, model_args:")
+    print(model_args_infss)
 
-    train_dataset, test_dataset, grid_coor, sdf_inv_scaler, stress_inv_scaler = LoadData(
-        seed=420)  #
-    grid_coor = grid_coor.to(device)
-    train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False)
+    train_dataset, test_dataset, sdf_inv_scaler, stress_inv_scaler = configs.LoadDataInv()  #
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
 
-    fwd_model = LoadForwardModel(
-        fwd_filebase, fwd_model_args, geo_encoder_model_args)
-    # geo_encoder, sdf_NN = LoadGeoEncoderModel(
-    #     geo_encoder_model_args,geo_encoder_filebase)
-
-    geo_encoder, sdf_NN = fwd_model.geo_encoder, fwd_model.sdf_NN
+    not_ss = LoadNOTModel(
+        filebase_infss, model_args_infss)
 
     inv_Unet, gaussian_diffusion = DiffusionInverseModelDefinition(
         **model_args)
-    trainer = TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion, geo_encoder, sdf_NN, grid_coor, filebase, args.train_flag,
+    trainer = TrainDiffusionInverseModel(inv_Unet, gaussian_diffusion, filebase, args.train_flag,
                                          train_loader, test_loader, epochs=args.epochs, lr=args.learning_rate)
 
     id = 2897
     Ytarget = test_dataset[id][1].unsqueeze(0)
-    EvaluateDiffusionInverseModel(fwd_model, inv_Unet, gaussian_diffusion,
+    EvaluateDiffusionInverseModel(not_ss, inv_Unet, gaussian_diffusion,
                                   Ytarget, sdf_inv_scaler, stress_inv_scaler,
-                                  num_sol=100, plot_flag=False)
+                                  num_sol=100)
 
 # %%
