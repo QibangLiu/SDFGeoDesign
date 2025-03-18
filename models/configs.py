@@ -14,9 +14,9 @@ import time
 
 script_path = os.path.dirname(os.path.abspath(__file__))
 
-data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel"
-data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift8_0-10000_aug.pkl"
-
+# data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel"
+# data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift8_0-10000_aug.pkl"
+data_filebase = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/PeriodUnitCell"
 
 PADDING_VALUE = -1000
 # %%
@@ -44,12 +44,10 @@ class ListDataset(Dataset):
 
 
 def LoadDataSS(test_size=0.2, seed=42):
-    data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/pc_sdf_ss_12-92_shift8_0-10000_aug.pkl"
-    with open(data_file, "rb") as f:
-        data = pickle.load(f)
-    sdf = data["sdf"].astype(np.float32)
-    stress = data["stress"].astype(np.float32)
-    sdf = sdf.reshape(-1, 120 * 120)
+    SS_curve_file = f"{data_filebase}/SS_curve.npy"
+    stress = np.load(SS_curve_file)
+    sdf_file = f"{data_filebase}/sdf.npz"
+    sdf = np.load(sdf_file)["sdf"]
     sdf_shift, sdf_scale = np.mean(sdf), np.std(sdf)
     sdf_norm = (sdf - sdf_shift) / sdf_scale
     sdf_norm = sdf_norm.reshape(-1, 1, 120, 120)
@@ -122,7 +120,8 @@ NUM_FRAMES = 26
 
 
 def LoadSUScaler():
-    scaler_file = f"/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/SU_scalers_{NUM_FRAMES}fram.npz"
+    scaler_file = f"{data_filebase}/SU_scalers_{NUM_FRAMES}fram.npz"
+
     scalers = np.load(scaler_file)
     su_shift, su_scaler = scalers["global_shift"], scalers["global_scale"]
     su_shift = torch.tensor(su_shift)[None, :]  # (1, 1,1,3)
@@ -137,15 +136,21 @@ def LoadSUScaler():
 
 def LoadDataSU(bs_train=32, bs_test=128, test_size=0.2, seed=42, padding_value=PADDING_VALUE, input_T=True):
     start = time.time()
-    data_file = f"/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/node_pc_sdf_mises_disp{NUM_FRAMES}fram_aug.pkl"
-    scaler_file = f"/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/SU_scalers_{NUM_FRAMES}fram.npz"
-    with open(data_file, "rb") as f:
-        data = pickle.load(f)
+
+    scaler_file = f"{data_filebase}/SU_scalers_{NUM_FRAMES}fram.npz"
     su_scalers = np.load(scaler_file)
     su_shift, su_scaler = su_scalers["global_shift"], su_scalers["global_scale"]
-    SU = data["mises_disp"]
-    nodes = data["mesh_coords"]
-    sdf = data["sdf"]
+
+    SU_file = f"{data_filebase}/mises_disp{NUM_FRAMES}fram.pkl"
+    with open(SU_file, "rb") as f:
+        SU = pickle.load(f)
+    nodes_file = f"{data_filebase}/mesh_coords.pkl"
+    with open(nodes_file, "rb") as f:
+        nodes = pickle.load(f)
+
+    sdf_file = f"{data_filebase}/sdf.npz"
+    sdf = np.load(sdf_file)["sdf"]
+
     Nt = SU[0].shape[1]
     t = torch.tensor(np.linspace(0, 1, Nt, dtype=np.float32))  # t is strain
     t = t[None, :, None]  # (1, Nt, 1)
@@ -216,10 +221,9 @@ def LoadDataSU(bs_train=32, bs_test=128, test_size=0.2, seed=42, padding_value=P
 
 
 def LoadCells():
-    mesh_file = "/work/nvme/bbka/qibang/repository_WNbbka/GINTO_data/microstruc/mesh_pc.pkl"
+    mesh_file = f"{data_filebase}/mesh_cells10K.pkl"
     with open(os.path.join(mesh_file), "rb") as f:
-        data_mesh = pickle.load(f)
-        cells = data_mesh['mesh_connect']
+        cells = pickle.load(f)
     return cells
 
 
