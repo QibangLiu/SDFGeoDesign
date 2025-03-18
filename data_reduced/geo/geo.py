@@ -65,8 +65,8 @@ dy = y[1]-y[0]
 model = gs.Gaussian(dim=2, var=10, len_scale=0.15)
 
 
-x_g = np.linspace(xmin-(xmax-xmin)*0.1, xmax+(xmax-xmin)*0.1, 121)
-y_g = np.linspace(ymin-(ymax-ymin)*0.1, ymax+(ymax-ymin)*0.1, 121)
+x_g = np.linspace(xmin-(xmax-xmin)*0.1, xmax+(xmax-xmin)*0.1, 120)
+y_g = np.linspace(ymin-(ymax-ymin)*0.1, ymax+(ymax-ymin)*0.1, 120)
 X_g, Y_g = np.meshgrid(x_g, y_g)
 grid_points = np.vstack([X_g.ravel(), Y_g.ravel()]).T
 # %%
