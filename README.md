@@ -1,26 +1,28 @@
-# SDF-Based Geometry Forward Prediction and Inverse Design
+# Towards SDF-based Metamaterial Design: Neural Operator Transformer for Forward Prediction and Diffusion Models for Inverse Design
 
-<img src="images/models.png" alt="Model Image" width="80%"/>
 
-**Figure 1: Overview of model architectures. The inverse denoising diffusion model (b) is used
-  to design the micro-structure geometry represented by SDF, given the target
-  stress-strain curve. The noise estimator is a residual U-Net architecture,
-  and each residual block takes as input the image from previous layer, the time
-  step $t$, and the stress-strain curve. The iterative denoising process generates
-  the SDF from pure Gaussian noise, from which the geometry is extracted using
-  a marching algorithm. Two forward neural operator transformers (a) are developed
-  to predict the macroscopic stress-strain curve and local solution fields for
-  arbitrary geometries. A residual U-net encodes the geometry represented by
-  SDF to key (K) and value (V) for the attention mechanism. The query points,
-  either the strain $\varepsilon$ or node coordinates $(x,y)$, are encoded using
-  NeRF  and a MLP as the
-  Query (Q) for the attention mechanism, which fuses the geometry information and
-  query points information. The output of a few attention blocks is decoded
-  using an MLP to the solution fields on the query points.**
+<img src="images/models.png" alt="Overview of model architectures" width="100%">
 
-<img src="images/ondemand_design.png" alt="Design results Image" width="80%"/>
+Figure 1: Overview of model architectures. The inverse denoising diffusion model (b) is used
+to design the micro-structure geometry represented by SDF, given the target
+stress-strain curve. The noise estimator is a residual U-Net architecture,
+and each residual block takes as input the image from previous layer, the time
+step $t$, and the stress-strain curve. The iterative denoising process generates
+the SDF from pure Gaussian noise, from which the geometry is extracted using
+a marching algorithm. Two forward neural operator transformers (NOT) (a) are developed
+to predict the macroscopic stress-strain curve and local solution fields for
+arbitrary geometries. A residual U-net encodes the geometry represented by
+SDF to key (K) and value (V) for the attention mechanism. The query points,
+either the strain $\varepsilon$ or node coordinates $(x,y)$, are encoded using
+NeRF  and a MLP as the
+Query (Q) for the attention mechanism, which fuses the geometry information and
+query points information. The output of a few attention blocks is decoded
+using an MLP to the solution fields on the query points.
 
-**Figure 2:On-demand one-to-many unit cell design. Two targets of stress-strain
+
+<img src="images/ondemand_design.png" alt="Design results Image" width="100%"/>
+
+Figure 2:On-demand one-to-many unit cell design. Two targets of stress-strain
     curves are generated using the Ramberg-Osgood equation.
     The top case has material properties of Young's modulus $E=800$ MPa and reference
     yield stress $\sigma_{0}=30$ MPa. The bottom case is obtained using $E=1000$
@@ -33,15 +35,14 @@
     and (f). (a) shows the comparison between the target and prediction of (c),
     (d), (e), and (f) using the forward model, with the $L_{2}$ relative error in
     the legend bracket. (b) shows the corresponding stress-strain curves
-    obtained using Abaqus simulation.**
+    obtained using Abaqus simulation.
 
 
 <img src="images/caseBe.gif" alt="Animation of case Af" width="100%"/>
 
-**Figure 3: Comparison of the Mises stress and displacement predictions with FE
-    ground truth at different strain $\varepsilon$ steps for the designed
-      structure in Figure 2(b)(e). The left shows the true Mises
-      stress under the true deformed shape, the middle row shows the predicted
-      Mises stress under the predicted deformed shape, and the right shows the
-      absolute error of the Mises stress under the true deformed shape.**
-
+Figure 3: the Mises stress and displacement by FEM ground truth and by NOT prediction at different strain
+  $\varepsilon$ steps for the designed
+  structure in Figure 2(b)(e). The left shows the true Mises
+  stress under the true deformed shape, the middle row shows the predicted
+  Mises stress under the predicted deformed shape, and the right shows the
+  absolute error of the Mises stress under the true deformed shape.
