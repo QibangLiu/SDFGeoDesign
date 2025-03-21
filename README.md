@@ -1,6 +1,6 @@
 # Towards SDF-based Metamaterial Design: Neural Operator Transformer for Forward Prediction and Diffusion Models for Inverse Design
 
-
+## Methodology
 <img src="images/models.png" alt="Overview of model architectures" width="100%">
 
 Figure 1: Overview of model architectures. The inverse denoising diffusion model (b) is used
@@ -19,7 +19,7 @@ Query (Q) for the attention mechanism, which fuses the geometry information and
 query points information. The output of a few attention blocks is decoded
 using an MLP to the solution fields on the query points.
 
-
+## Inverse Design
 <img src="images/ondemand_design.png" alt="Design results Image" width="100%"/>
 
 Figure 2:On-demand one-to-many unit cell design. Two targets of stress-strain
@@ -37,7 +37,7 @@ Figure 2:On-demand one-to-many unit cell design. Two targets of stress-strain
     the legend bracket. (b) shows the corresponding stress-strain curves
     obtained using Abaqus simulation.
 
-
+## Forward prediction of designed periodic unit cell
 <img src="images/caseBe.gif" alt="Animation of case Af" width="100%"/>
 
 Figure 3: the Mises stress and displacement by FEM ground truth and by NOT prediction at different strain
