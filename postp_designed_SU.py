@@ -12,16 +12,20 @@ import pickle
 import pyvista as pv
 import os
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
 # %%
+# TODO: change to other backend ('html' or 'client') for intearctive plots
 pv_bc = "html"  # static" #'html' 'client'
 pv.set_jupyter_backend(pv_bc)
 # pv.global_theme.trame.jupyter_extension_enabled = True
 # pv.global_theme.trame.server_proxy_enabled = True
 
 if pv_bc == "static":
-    window_size = (2048*2, 900*2)
+  window_size = (1280*2, 600*2)
 else:
-    window_size = (1400, 800)
+  window_size = (1350, 800)
+# window_size = (2048*2, 900*2)
+
 # %%
 configs = NOTSU_configs(input_T=False)
 filebase = configs["filebase"]
@@ -33,6 +37,7 @@ print("\n\n model_args:")
 notsu = LoadNOTModel(filebase, model_args)
 
 SU_inverse = LoadSUScaler()
+
 # %%
 
 
@@ -45,6 +50,7 @@ def cal_l2_error(y_p, y_t):
     e_uy = np.linalg.norm(uy_p-uy_t)/np.linalg.norm(uy_t)
     error_s = (e_s+e_ux+e_uy)/3
     return error_s
+
 
 
 # %%
@@ -78,29 +84,6 @@ def predict_su_designed_geo(working_dir):
     error_s = cal_l2_error(pred, su_true)
     print(f"L2 Relative Error of the test sample: {error_s}")
     return pred, su_true, cells, nodes[:, :2]
-# %%
-
-
-def plot_geo_from_sdf(sdf_norm, ax, sdf_inverse):
-    sdf = sdf_inverse(sdf_norm.cpu().detach().numpy())
-    sdf = sdf.reshape(120, 120)
-    geo = measure.find_contours(
-        sdf, 0, positive_orientation='high')
-    nx = sdf.shape[0]-1
-    for c, contour in enumerate(geo):
-        contour = contour*1.2/nx-0.1
-        x, y = contour[:, 1], contour[:, 0]
-        if c == 0:
-
-            ax.fill(x, y, alpha=1.0, edgecolor="black",
-                    facecolor="cyan", label="Outer Boundary")
-        else:
-            ax.fill(x, y, alpha=1.0, edgecolor="black",
-                    facecolor="white", label="Hole")
-    ax.set_aspect("equal")
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-
 
 # %%
 def get_pvstyle_cells(cells_np):
@@ -133,9 +116,12 @@ def plot_results(su_true, su_pred, cells_np, verts,
     cells, cell_types = get_pvstyle_cells(cells_np)
     plotter = pv.Plotter(shape=(3, Nt), notebook=notebook,
                          window_size=window_size, border=False)
-    lables_t = [f"true e: {((i)*3.2+4):.1f}%" for i in range(Nt)]
-    lables_p = [f"pred e: {((i)*3.2+4):.1f}%" for i in range(Nt)]
-    lables_e = [f"error e: {((i)*3.2+4):.1f}%" for i in range(Nt)]
+    lables_t = [
+        f"True Mises stress [MPa] at strain = {((i)*3.2+4):.1f}%" for i in range(Nt)]
+    lables_p = [
+        f"Pred. Mises stress [MPa] at strain = {((i)*3.2+4):.1f}%" for i in range(Nt)]
+    lables_e = [
+        f"Abs. error [MPa] at strain = {((i)*3.2+4):.1f}%" for i in range(Nt)]
     for i in range(Nt):
         sigma_true, sigma_pred = su_true[:, i, 0], su_pred[:, i, 0]
         error = np.abs(sigma_true-sigma_pred)
@@ -174,8 +160,101 @@ def plot_results(su_true, su_pred, cells_np, verts,
     plotter.show()
 
 
+def plot_results_animation(file_name, su_true, su_pred, cells_np, verts,
+                           label="Mises stress [MPa]", opacity=1.0,
+                           cmap="viridis", fps=10,
+                           notebook=None, show_edges=True,
+                           window_size=(2048, 768)):
+    """
+    su_true: (N,Nt,3)
+    """
+    cells, cell_types = get_pvstyle_cells(cells_np)
+
+    Nt = su_true.shape[1]
+    max_s, min_s = np.max(su_true[:, -1, 0]), np.min(su_true[:, -1, 0])
+    error_s = np.abs(su_true[:, -1, 0]-su_pred[:, -1, 0])
+    max_e, min_e = np.max(error_s), np.min(error_s)
+
+    plotter = pv.Plotter(shape=(1, 3), notebook=notebook,
+                         window_size=window_size, border=False)
+    text_actor = plotter.add_text(
+        "strain = 0", position='upper_left', font_size=20)
+
+    # Open a mv file
+    extnsion = file_name.split('.', 1)[-1]
+    if extnsion == 'gif':
+        plotter.open_gif(file_name, loop=20, fps=fps)
+    else:
+        plotter.open_movie(file_name, framerate=fps)
+        # plotter.show(auto_close=False)
+
+    lables_t = "True Mises stress [MPa]"
+    lables_p = "Pred. Mises stress [MPa]"
+    lables_e = "Abs. error [MPa]"
+    i = 0
+    sigma_true, sigma_pred = su_true[:, i, 0], su_pred[:, i, 0]
+    error = np.abs(sigma_true-sigma_pred)
+
+    defomred_verts_t = verts + su_true[:, i, 1:3]
+    defomred_verts_t = np.hstack(
+        (defomred_verts_t, np.zeros((defomred_verts_t.shape[0], 1))))
+    mesh_t = pv.UnstructuredGrid(
+        cells, cell_types, defomred_verts_t)
+    mesh_t[lables_t] = sigma_true
+    plotter.subplot(0, 0)
+    plotter.add_mesh(mesh_t, scalars=lables_t,
+                     show_edges=show_edges, opacity=opacity, cmap=cmap, clim=[min_s, max_s])
+    plotter.view_xy()
+
+    defomred_verts_p = verts + su_pred[:, i, 1:3]
+    defomred_verts_p = np.hstack(
+        (defomred_verts_p, np.zeros((defomred_verts_p.shape[0], 1))))
+    mesh_p = pv.UnstructuredGrid(
+        cells, cell_types, defomred_verts_p)
+    mesh_p[lables_p] = sigma_pred
+    plotter.subplot(0, 1)
+    plotter.add_mesh(mesh_p, scalars=lables_p,
+                     show_edges=show_edges, opacity=opacity,
+                     cmap=cmap, clim=[min_s, max_s])
+    plotter.view_xy()
+
+    mesh_e = pv.UnstructuredGrid(
+        cells, cell_types, defomred_verts_t)
+    mesh_e[lables_e] = error
+    plotter.subplot(0, 2)
+    plotter.add_mesh(mesh_e, scalars=lables_e,
+                     show_edges=show_edges, opacity=opacity, cmap=cmap, clim=[min_e, max_e])
+    plotter.view_xy()
+
+    plotter.write_frame()
+
+    for i in range(1, Nt):
+        text_actor.set_text('upper_left', f"strain = {i*0.8:.1f}%")
+        sigma_true, sigma_pred = su_true[:, i, 0], su_pred[:, i, 0]
+        error = np.abs(sigma_true-sigma_pred)
+
+        defomred_verts_t = verts + su_true[:, i, 1:3]
+        defomred_verts_t = np.hstack(
+            (defomred_verts_t, np.zeros((defomred_verts_t.shape[0], 1))))
+
+        defomred_verts_p = verts + su_pred[:, i, 1:3]
+        defomred_verts_p = np.hstack(
+            (defomred_verts_p, np.zeros((defomred_verts_p.shape[0], 1))))
+
+        mesh_t[lables_t] = sigma_true
+        mesh_t.points = defomred_verts_t
+        mesh_p[lables_p] = sigma_pred
+        mesh_p.points = defomred_verts_p
+        mesh_e[lables_e] = error
+        mesh_e.points = defomred_verts_t
+
+        plotter.write_frame()
+    # Be sure to close the plotter when finished
+    plotter.close()
+
+
 # %%
-working_dir = "./abaqus_sims/testID2897/e"
+working_dir = "./abaqus_sims/testID2897/d"
 
 su_pred, su_true, cells, verts = predict_su_designed_geo(working_dir)
 pred_plot = su_pred[:, 5::4]
@@ -185,3 +264,34 @@ plot_results(true_plot, pred_plot, cells,
 
 
 # %%
+working_dir = "./abaqus_sims/testID9376/f"
+
+su_pred, su_true, cells, verts = predict_su_designed_geo(working_dir)
+pred_plot = su_pred[:, 5::4]
+true_plot = su_true[:, 5::4]
+plot_results(true_plot, pred_plot, cells,
+             verts, cmap="jet", show_edges=True, notebook=True, html_file=None, window_size=window_size)
+
+
+# %%
+working_dir = "./abaqus_sims/ondemand_case1/e"
+
+su_pred, su_true, cells, verts = predict_su_designed_geo(working_dir)
+pred_plot = su_pred[:, 5::4]
+true_plot = su_true[:, 5::4]
+plot_results(true_plot, pred_plot, cells,
+             verts, cmap="jet", show_edges=True, notebook=True, html_file=None, window_size=window_size)
+
+
+# %%
+working_dir = "./abaqus_sims/ondemand_case2/e"
+
+su_pred, su_true, cells, verts = predict_su_designed_geo(working_dir)
+pred_plot = su_pred[:, 5::4]
+true_plot = su_true[:, 5::4]
+plot_results(true_plot, pred_plot, cells,
+             verts, cmap="jet", show_edges=False, notebook=True, html_file=None, window_size=window_size)
+if pv_bc != "static":
+  file_name = "./images/caseBe.gif"
+  plot_results_animation(file_name, su_true, su_pred, cells,
+                         verts, cmap="jet", show_edges=True, fps=5, notebook=True, window_size=(2048, 768))
