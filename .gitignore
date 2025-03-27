@@ -1,3 +1,9 @@
+# do not ignore the following files
+!models/saved_weights/NOTSS
+!models/saved_weights/NOTSU/model.ckpt
+!models/saved_weights/NOTSU/logs.json
+!models/saved_weights/inv_diffusion
+# ignore
 **/slurm_output*/
 **/saved_models/
 **/saved_weights*/
@@ -18,3 +24,5 @@ abaqusis.env
 sample.json
 *.exception
 abaqus_sims/*
+*/test_results.pkl
+
