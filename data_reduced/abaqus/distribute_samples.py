@@ -6,8 +6,8 @@ import json
 
 
 # %%
-file_base = '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/abaqus/femDataR1'
-geos_file = '/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/geo/geo_sdf_randv_pcn_all.pkl'
+file_base = "./femdata/abaqus/femDataR1"
+geos_file = './geodata/geo_sdf_randv.pkl'
 with open(geos_file, "rb") as f:
     geo_data = pickle.load(f)
 vertices_all = geo_data['vertices']

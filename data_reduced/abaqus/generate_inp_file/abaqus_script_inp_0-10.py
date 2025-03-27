@@ -341,7 +341,7 @@ def generate_inp(working_dir):
 
 # %%
 
-file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/abaqus/femDataR1"
+file_base = "./femdata/abaqus/femDataR1"
 
 sec_id_start, sec_id_end = 0, 10
 

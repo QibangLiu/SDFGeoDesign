@@ -1,3 +1,7 @@
+"""For generate random 2D geometries with signed distance function (SDF)
+    the code is messy, but it works
+"""
+
 # %%
 import gstools as gs
 import numpy as np
@@ -417,10 +421,9 @@ def get_2D_geo(seed=None):
 # %%
 # seed=np.random.randint(1000)
 vertices_all, inner_loops_all, out_loop_all, points_cloud_all, sdf_all = [], [], [], [], []
-file_id = sys.argv[1]
-file_base = './'
+file_base = './geodata'
 os.makedirs(file_base, exist_ok=True)
-file_name = os.path.join(file_base, 'geo_sdf_randv_'+file_id+'.pkl')
+file_name = os.path.join(file_base, 'geo_sdf_randv'+'.pkl')
 start_time = timeit.default_timer()
 while len(vertices_all) < 5000:
     geo = get_2D_geo(seed=None)

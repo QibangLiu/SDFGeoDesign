@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -J abaqus_postprocess
 #SBATCH --output=./slurm_output/abaqus_postprocess%j.log
-#SBATCH --account=bdsy-delta-cpu
+#SBATCH --account=*****
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8    # <- match to OMP_NUM_THREADS

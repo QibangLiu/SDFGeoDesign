@@ -11,17 +11,13 @@ import warnings
 import os
 if __package__:
     from .configs import NOTSU_configs, LoadDataSU
-    from .modules.params_proj import ChannelsParamsProj
     from .modules.UNets import UNet
-    from .modules.point_encoding import PointCloudPerceiverChannelsEncoder
     from .modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
     from .modules.transformer import SelfAttentionBlocks, MLP, ResidualCrossAttentionBlock
     from .trainer import torch_trainer
 else:
     from configs import NOTSU_configs, LoadDataSU
-    from modules.params_proj import ChannelsParamsProj
     from modules.UNets import UNet
-    from modules.point_encoding import PointCloudPerceiverChannelsEncoder
     from modules.point_position_embedding import PosEmbLinear, encode_position, position_encoding_channels
     from modules.transformer import SelfAttentionBlocks, MLP, ResidualCrossAttentionBlock
     from trainer import torch_trainer

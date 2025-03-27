@@ -70,7 +70,6 @@ def extract_mesh_data(assembly):
     np.savez('mesh_data.npz', **mesh_data)
 
 
-# working_dir = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/GeoSDF2D/abaqus/femDataR1/sec_0/sample_0"
 
 
 def get_fieldData(working_dir):
@@ -108,7 +107,7 @@ def rerun_abaqus(working_dir):
 
 
 # %%
-file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/abaqus/femDataR1"
+file_base = "./femdata/abaqus/femDataR1"
 sec_id_start, sec_id_end = int(sys.argv[1]), int(sys.argv[2])
 count = 0
 rerun_fem = False

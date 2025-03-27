@@ -1,18 +1,14 @@
 #!/bin/bash
 #SBATCH -J abaqus_job
 #SBATCH --output=./slurm_output/abaqus_job%j.log
-#SBATCH --account=bdsy-delta-cpu
+#SBATCH --account=*****
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1    # <- match to OMP_NUM_THREADS
 #SBATCH --partition=cpu #gpuA40x4-interactive      # <- or one of: gpuA100x4 gpuA40x4 gpuA100x8 gpuMI100x8
 #SBATCH --time=48:00:00      # hh:mm:ss for the job
 #SBATCH --mem=2g #199?
-# Check if a section ID argument is provided
-# if [ -z "$1" ]; then
-#     echo "Usage: $0 <section_id>"
-#     exit 1
-# fi
+
 
 if [ "$#" -ne 2 ]; then
     echo "Usage: $0 <arg1> <arg2>"
@@ -26,7 +22,7 @@ sec_id_e="$2"
 # Loop through each section ID
 for sec_id in $(seq $sec_id_s $sec_id_e); do
     # Set working directory
-    file_base="/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/abaqus/femDataR1"
+    file_base= "./femdata/abaqus/femDataR1"
     working_pre="${file_base}/sec_${sec_id}"
     # List subdirectories in sorted natural order
     mapfile -t working_dirs < <(find "$working_pre" -mindepth 1 -maxdepth 1 -type d | sort -V)

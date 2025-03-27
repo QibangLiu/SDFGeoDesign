@@ -11,8 +11,8 @@
 
 
 
-# script_path="/work/hdd/bdsy/qibang/repository_Wbdsy/GeoSDF2D/data_reduced/abaqus/generate_inp_file/abaqus_script_inp_0-10.py"
-# script_path="/work/hdd/bdsy/qibang/repository_Wbdsy/GeoSDF2D/data_reduced/abaqus/generate_inp_file/abaqus_script_inp_10-20.py"
-script_path="/work/hdd/bdsy/qibang/repository_Wbdsy/GeoSDF2D/data_reduced/abaqus/generate_inp_file/abaqus_script_inp_20-30.py"
+# script_path="./abaqus_script_inp_0-10.py"
+# script_path="./abaqus_script_inp_10-20.py"
+script_path="./abaqus_script_inp_20-30.py"
 
 /projects/bbkg/Abaqus/2024/Commands/abaqus cae noGUI="$script_path"

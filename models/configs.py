@@ -14,9 +14,7 @@ import time
 
 script_path = os.path.dirname(os.path.abspath(__file__))
 
-# data_file_base = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel"
-# data_file = f"{data_file_base}/pc_sdf_ss_12-92_shift8_0-10000_aug.pkl"
-data_filebase = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/PeriodUnitCell"
+data_filebase = f"{script_path}/../data/PeriodUnitCell"
 
 PADDING_VALUE = -1000
 # %%
@@ -77,7 +75,7 @@ def LoadDataSS(test_size=0.2, seed=42):
 
 
 def NOTSS_configs():
-    file_base = f"{script_path}/saved_weights/NOTSS_test"
+    file_base = f"{script_path}/saved_weights/NOTSS"
     notss_args = {"img_shape": (1, 120, 120),
                   "channel_mutipliers": [1, 2, 4, 8],
                   "has_attention": [False, False, False, False],
@@ -87,31 +85,6 @@ def NOTSS_configs():
                   "emd_version": "nerf"}
 
     args_all = {"model_args": notss_args, "filebase": file_base}
-    return args_all
-
-
-def InfSS_configs(*args, **kwargs):
-    file_base = f"{script_path}/saved_weights/InfSS_test"
-    img_shape = (1, 120, 120)
-    channel_mutipliers = [1, 2, 4, 8]
-    has_attention = [False, False, False, False]
-    first_conv_channels = 8
-    num_res_blocks = 1
-    norm_groups = None
-    dropout = 0.0
-    latent_c = 128
-    encoder_args = {"img_shape": img_shape,
-                    "channel_mutipliers": channel_mutipliers,
-                    "has_attention": has_attention,
-                    "first_conv_channels": first_conv_channels,
-                    "num_res_blocks": num_res_blocks,
-                    "norm_groups": norm_groups,
-                    "dropout": dropout,
-                    "out_c": latent_c}
-    inf_ags = {**encoder_args, "latent_d": 120, "in_c": latent_c, "ndim": 1,
-               "d_hidden_sdfnn": [128, 128]}
-
-    args_all = {"model_args": inf_ags, "filebase": file_base}
     return args_all
 
 
@@ -227,34 +200,9 @@ def LoadCells():
     return cells
 
 
-def InfSU_configs(*args, **kwargs):
-    file_base = f"{script_path}/saved_weights/InfSU_test"
-    img_shape = (1, 120, 120)
-    channel_mutipliers = [1, 2, 4, 8]
-    has_attention = [False, False, False, False]
-    first_conv_channels = 8
-    num_res_blocks = 1
-    norm_groups = None
-    dropout = 0.0
-    latent_c = 128
-    encoder_args = {"img_shape": img_shape,
-                        "channel_mutipliers": channel_mutipliers,
-                        "has_attention": has_attention,
-                        "first_conv_channels": first_conv_channels,
-                        "num_res_blocks": num_res_blocks,
-                        "norm_groups": norm_groups,
-                        "dropout": dropout,
-                        "out_c": latent_c}
-    inf_ags = {**encoder_args, "latent_d": 120, "in_c": latent_c, "ndim": 3, "out_d": 3,
-               "d_hidden_sdfnn": [128, 128], "padding_value": PADDING_VALUE}
-
-    args_all = {"model_args": inf_ags, "filebase": file_base}
-    return args_all
-
-
 def NOTSU_configs(input_T=True):
     if input_T:
-        file_base = f"{script_path}/saved_weights/NOTSU_test"
+        file_base = f"{script_path}/saved_weights/NOTSU_inpT_test"
         notsu_args = {"img_shape": (1, 120, 120),
                       "channel_mutipliers": [1, 2, 4, 8],
                       "has_attention": [False, False, False, False],
@@ -265,7 +213,7 @@ def NOTSU_configs(input_T=True):
                       "padding_value": PADDING_VALUE}
     else:
         # file_base = f"{script_path}/saved_weights/NOTSU_noinpT_frame_scaler_test"
-        file_base = f"{script_path}/saved_weights/NOTSU_noinpT_test"
+        file_base = f"{script_path}/saved_weights/NOTSU"
         notsu_args = {"img_shape": (1, 120, 120),
                       "channel_mutipliers": [1, 2, 4, 8],
                       "has_attention": [False, False, False, False],
@@ -278,27 +226,14 @@ def NOTSU_configs(input_T=True):
     return args_all
 
 
-def DeepONetSU_configs():
-    file_base = f"{script_path}/saved_weights/DeepONetSU_test"
-
-    don_args = {"layer_sizes_branch": [120*120, 64, 256, 256, 128, 128],
-                "layer_sizes_trunk": [3, 256, 256, 256, 128, 128],
-                "d_hidden": [128, 128],
-                "out_d": 3,
-                "emd_version": "nerf",
-                "padding_value": PADDING_VALUE}
-    args_all = {"model_args": don_args, "filebase": file_base}
-    return args_all
-
 # %%
 
 
 def LoadDataInv(test_size=0.2, seed=420):
-    data_file = "/work/nvme/bbka/qibang/repository_WNbbka/TRAINING_DATA/Geo2DReduced/dataset/augmentation_split_intervel_new/pc_sdf_ss_12-92_shift8_0-10000_aug.pkl"
-    with open(data_file, "rb") as f:
-        data = pickle.load(f)
-    sdf = data["sdf"].astype(np.float32)
-    stress = data["stress"].astype(np.float32)
+    SS_curve_file = f"{data_filebase}/SS_curve.npy"
+    stress = np.load(SS_curve_file)
+    sdf_file = f"{data_filebase}/sdf.npz"
+    sdf = np.load(sdf_file)["sdf"]
     sdf = sdf.reshape(-1, 120 * 120)
     sdf_shift, sdf_scale = np.mean(sdf), np.std(sdf)
     sdf_norm = (sdf - sdf_shift) / sdf_scale
@@ -338,7 +273,7 @@ def INV_configs():
 
     inv_img_shape = (1, 120, 120)
     has_attention = [False, False, True, True]
-    inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion_test"
+    inv_diffusion_filebase = f"{script_path}/saved_weights/inv_diffusion"
     inv_diffusion_model_args = {"img_shape": inv_img_shape, "channel_multpliers": channel_multpliers,
                                   "has_attention": has_attention, "fist_conv_channels": fist_conv_channels,
                                   "num_heads": num_heads, "norm_groups": norm_groups, "num_res_blocks": num_res_blocks,
