@@ -1,8 +1,3 @@
-# do not ignore the following files
-!models/saved_weights/NOTSS
-!models/saved_weights/NOTSU/model.ckpt
-!models/saved_weights/NOTSU/logs.json
-!models/saved_weights/inv_diffusion
 # ignore
 **/slurm_output*/
 **/saved_models/
@@ -26,3 +21,18 @@ sample.json
 abaqus_sims/*
 */test_results.pkl
 
+# do not ignore the following files
+!models/saved_weights/NOTSS
+!models/saved_weights/NOTSU/model.ckpt
+!models/saved_weights/NOTSU/logs.json
+!models/saved_weights/inv_diffusion
+!abaqus_sims/ondemand_case1
+!abaqus_sims/ondemand_case2
+!abaqus_sims/testID2897
+!abaqus_sims/testID6653
+!abaqus_sims/testID9376
+
+!abaqus_sims/*/*/displacement.npy
+!abaqus_sims/*/*/mesh_data.npz
+!abaqus_sims/*/*/mises_stress.npy
+!abaqus_sims/*/*/stress_strain.csv
