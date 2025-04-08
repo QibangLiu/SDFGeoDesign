@@ -11,9 +11,9 @@ Figure 1: Overview of model architectures. The inverse denoising diffusion model
 Figure 2: On-demand one-to-many unit cell design. Two target stress-strain curves are generated using the Ramberg-Osgood equation. The top case has material properties of Young's modulus $E=800$ MPa and reference yield stress $\sigma_{0}=30$ MPa. The bottom case is obtained using $E=1000$ MPa and $\sigma_{0}=40$ MPa, but stress only follows the Ramberg-Osgood equation for $\varepsilon \leq 0.156$. For $\varepsilon \in [0.156,0.2]$, the stress increases linearly with Young's modulus of $500$ MPa. These two target curves are fed into the inverse diffusion model for 500 SDF solutions with guidance weight $w=1$, which are then fed into the forward models for prediction. We select 4 design results with the lowest $L_{2}$ relative error, shown in (c), (d), (e), and (f). (a) shows the comparison between the target and prediction of (c), (d), (e), and (f) using the forward model, with the $L_{2}$ relative error in the legend bracket. (b) shows the corresponding stress-strain curves obtained using Abaqus simulation.
 
 ## Forward prediction of designed periodic unit cell
-<img src="images/caseBe.gif" alt="Animation of case Af" width="100%"/>
+<img src="images/caseBe_Efig5.gif" alt="Animation of case Be" width="100%"/>
 
-Figure 3: Comparison of Mises stress and displacement between FEM ground truth and NOT prediction at different strain $\varepsilon$ steps for the designed structure in Figure 2(b) and (e). The left panel shows the true Mises stress on the true deformed shape, the middle panel shows the predicted Mises stress on the predicted deformed shape, and the right panel shows the absolute error of the Mises stress on the true deformed shape.
+Figure 3: Comparison of Mises stress and displacement between FEM ground truth and NOT prediction at different strain $\varepsilon$ steps for the designed structure in Figure 2(B)(e). The left panel shows the true Mises stress on the true deformed shape, the middle panel shows the predicted Mises stress on the predicted deformed shape, and the right panel shows the absolute error of the Mises stress on the true deformed shape.
 
 
 ## Reference
