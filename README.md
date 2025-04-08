@@ -16,6 +16,8 @@ Figure 2: On-demand one-to-many unit cell design. Two target stress-strain curve
 Figure 3: Comparison of Mises stress and displacement between FEM ground truth and NOT prediction at different strain $\varepsilon$ steps for the designed structure in Figure 2(B)(e). The left panel shows the true Mises stress on the true deformed shape, the middle panel shows the predicted Mises stress on the predicted deformed shape, and the right panel shows the absolute error of the Mises stress on the true deformed shape.
 
 
+## Dataset
+The dataset used for training and evaluation is publicly available on [Zenodo](https://doi.org/10.5281/zenodo.15121966).
 ## Reference
 
  - Liu, Qibang, Seid Koric, Diab Abueidda, Hadi Meidani, and Philippe Geubelle. "Towards Sign Distance Function based Metamaterial Design: Neural Operator Transformer for Forward Prediction and Diffusion Models for Inverse Design." arXiv preprint arXiv:2504.01195 (2025).
