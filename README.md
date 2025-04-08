@@ -1,4 +1,4 @@
-# Towards SDF-based Metamaterial Design: Neural Operator Transformer for Forward Prediction and Diffusion Models for Inverse Design
+# Towards SDF-based Metamaterial Design: Neural Operator Transformer for Forward Prediction and Diffusion Model for Inverse Design
 
 ## Methodology
 <img src="images/models.png" alt="Overview of model architectures" width="100%">
